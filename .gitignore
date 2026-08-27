@@ -27,3 +27,4 @@ share.png
 
 # Local Netlify folder
 .netlify
+deno.lock
