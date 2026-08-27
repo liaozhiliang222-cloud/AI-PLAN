@@ -1,0 +1,29 @@
+# dependencies
+node_modules
+
+# build output
+.next
+out
+
+# env (secrets)
+.env
+.env*.local
+
+# database
+*.db
+*.db-journal
+
+# logs
+*.log
+
+# transient / generated artifacts
+og_m.png
+og_test.png
+share.png
+*.tsbuildinfo
+
+# OS
+.DS_Store
+
+# Local Netlify folder
+.netlify

@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Provider {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  slug           String   @unique
+  country        String // domestic | overseas
+  logoColor      String   @default("#2563EB")
+  website        String?
+  officialSource String?
+  status         String   @default("active")
+  plans          Plan[]
+  models         Model[]
+  createdAt      DateTime @default(now())
+}
+
+model Plan {
+  id                Int       @id @default(autoincrement())
+  providerId        Int
+  provider          Provider  @relation(fields: [providerId], references: [id])
+  name              String
+  slug              String    @unique
+  tagline            String   @default("")
+  priceCny          Float
+  currency          String    @default("CNY")
+  priceNote         String    @default("")
+  billingCycle      String    @default("monthly")
+  region            String // domestic | overseas
+  quotaType         String    @default("credits") // token | credits | points | requests
+  quotaAmount       Float?
+  quotaUnit         String?
+  quotaWindow       String? // 5h | daily | weekly | monthly | payg
+  rateMultiplier    Float?
+  fastQuota         String?
+  normalQuota       String?
+  quotaNote         String?
+  capacityIndex     Int       @default(50) // 0-100 额度容量估算
+  contextNote       String?
+  tools             String    @default("[]") // JSON string[]
+  toolCompat        String    @default("{}") // JSON {toolName: status}
+  scenarios         String    @default("[]") // JSON scenario keys
+  pros              String    @default("[]")
+  cons              String    @default("[]")
+  recommendedFor    String    @default("[]")
+  notRecommendedFor String    @default("[]")
+  description       String    @default("")
+  officialUrl       String?
+  lastVerifiedAt    DateTime?
+  trustLevel        String    @default("official_verified") // official_verified | official_detected | community_verified | unverified
+  status            String    @default("published") // published | draft
+  models            PlanModel[]
+  score             PlanScore?
+  changes           ChangeLog[]
+  pricePoints       PricePoint[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model PlanModel {
+  planId      Int
+  modelId     Int
+  multiplier  Float?
+  recommended Boolean @default(false)
+  plan        Plan    @relation(fields: [planId], references: [id])
+  model       Model   @relation(fields: [modelId], references: [id])
+
+  @@id([planId, modelId])
+}
+
+model Model {
+  id                   Int       @id @default(autoincrement())
+  providerId           Int
+  provider             Provider  @relation(fields: [providerId], references: [id])
+  name                 String
+  slug                 String    @unique
+  contextK             Int? // 千 token
+  inputPrice           Float? // ¥ / M tokens
+  outputPrice          Float?
+  releaseDate          String?
+  strengths            String    @default("[]")
+  weaknesses           String    @default("[]")
+  recommendedScenarios String    @default("[]")
+  status               String    @default("active")
+  plans                PlanModel[]
+  score                ModelScore?
+  changes              ChangeLog[]
+  createdAt            DateTime  @default(now())
+}
+
+model PlanScore {
+  id           Int    @id @default(autoincrement())
+  planId       Int    @unique
+  plan         Plan   @relation(fields: [planId], references: [id])
+  ability      Float // 模型能力 0-100
+  quota        Float // 额度
+  price        Float // 价格
+  toolCompat   Float // 工具兼容
+  stability    Float // 稳定性
+  cnExperience Float // 国内体验
+  overall      Float  @default(0) // 自动计算
+  trend        Int    @default(0) // 排名变化
+  heat         Int    @default(50)
+}
+
+model ModelScore {
+  id          Int   @id @default(autoincrement())
+  modelId     Int   @unique
+  model       Model @relation(fields: [modelId], references: [id])
+  overall     Float
+  coding      Float
+  agent       Float
+  frontend    Float
+  backend     Float
+  debug       Float
+  longContext Float
+  speed       Float
+  cost        Float
+  trend       Int   @default(0)
+}
+
+model ChangeLog {
+  id          Int       @id @default(autoincrement())
+  entityType  String // plan | model | provider
+  entityId    Int?
+  entitySlug  String? // 冗余：用于无外键实体展示
+  planId      Int?
+  plan        Plan?     @relation(fields: [planId], references: [id])
+  modelId     Int?
+  model       Model?    @relation(fields: [modelId], references: [id])
+  changeType  String // new_model | price | quota | launch | delist | policy | capability
+  title       String
+  summary     String
+  importance  String // major | normal | minor
+  impactFrom  Float?
+  impactTo    Float?
+  impactText  String? // 如 “推荐指数 89 → 92 ↑”
+  sourceType  String    @default("official") // official | benchmark | community | editorial
+  detectedAt  DateTime  @default(now())
+  verified    Boolean   @default(true)
+}
+
+model PricePoint {
+  id       Int      @id @default(autoincrement())
+  planId   Int
+  plan     Plan     @relation(fields: [planId], references: [id])
+  date     DateTime
+  priceCny Float
+}
+
+model SourceMonitor {
+  id             Int       @id @default(autoincrement())
+  label          String
+  url            String
+  providerSlug   String?
+  lastHash       String?
+  lastContent    String?
+  lastCheckedAt  DateTime?
+  enabled        Boolean   @default(true)
+  reviewItems    ReviewItem[]
+  createdAt      DateTime  @default(now())
+}
+
+model ReviewItem {
+  id        Int     @id @default(autoincrement())
+  sourceId  Int? // null 表示非监控源触发（如价格异常检测）
+  source    SourceMonitor? @relation(fields: [sourceId], references: [id])
+  payload   String
+  status    String  @default("pending") // pending | approved | dismissed
+  createdAt DateTime @default(now())
+}
