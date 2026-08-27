@@ -1,0 +1,11 @@
+import { PrismaClient } from "@prisma/client";
+const d = new PrismaClient();
+const pm = await d.planModel.deleteMany({});
+console.log("删除 PlanModel 关联:", pm.count);
+const ms = await d.modelScore.deleteMany({});
+console.log("删除 ModelScore:", ms.count);
+const m = await d.model.deleteMany({});
+console.log("删除 Model:", m.count);
+const cl = await d.changeLog.updateMany({ where: { modelId: { not: null } }, data: { modelId: null, entitySlug: null } });
+console.log("清理 ChangeLog modelId:", cl.count);
+await d.$disconnect();
