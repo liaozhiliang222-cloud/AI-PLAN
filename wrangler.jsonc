@@ -17,6 +17,13 @@
 			"service": "ai-plan-radar"
 		}
 	],
+	"rules": [
+		{
+			"type": "CompiledWasm",
+			"globs": ["**/*.wasm"],
+			"fallthrough": true
+		}
+	],
 	"vars": {
 		"NEXTJS_ENV": "production",
 		"NEXT_PUBLIC_SITE_URL": "https://plan.surveykit.cc",
