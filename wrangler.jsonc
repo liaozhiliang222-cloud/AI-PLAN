@@ -28,6 +28,7 @@
 		"NEXTJS_ENV": "production",
 		"NEXT_PUBLIC_SITE_URL": "https://plan.surveykit.cc",
 		"LLM_BASE_URL": "http://api.surveykit.cc/v1",
-		"LLM_MODELS": "deepseek-v4-flash,ZhipuAI/GLM-5.2"
+		"LLM_MODELS": "deepseek-v4-flash,ZhipuAI/GLM-5.2",
+		"PG_FIX_IP": "3.106.102.114"
 	}
 }
