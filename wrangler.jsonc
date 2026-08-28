@@ -1,0 +1,42 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "ai-plan-radar",
+	"compatibility_date": "2026-08-27",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "ai-plan-radar"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "NEXT_INC_CACHE_R2_BUCKET",
+			"bucket_name": "ai-plan-radar-opennext-cache"
+		}
+	],
+	"images": {
+		"binding": "IMAGES"
+	},
+	"vars": {
+		"NEXTJS_ENV": "production",
+		"NEXT_PUBLIC_SITE_URL": "https://plan.surveykit.cc",
+		"LLM_BASE_URL": "http://api.surveykit.cc/v1",
+		"LLM_MODELS": "deepseek-v4-flash,ZhipuAI/GLM-5.2"
+	},
+	"triggers": {
+		"crons": [
+			// 每日 08:00 (UTC+8) 同步模型排行榜：cron 会访问 /api/cron?models=1
+			// 实际 cron 触发的是 worker 的 scheduled 事件，由 opennext 路由到 /api/cron
+			"0 0 * * *"
+		]
+	}
+}

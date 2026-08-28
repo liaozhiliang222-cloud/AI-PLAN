@@ -28,3 +28,11 @@ share.png
 # Local Netlify folder
 .netlify
 deno.lock
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
