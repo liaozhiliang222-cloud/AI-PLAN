@@ -1,7 +1,4 @@
-// default open-next.config.ts file created by @opennextjs/cloudflare
+// OpenNext 配置：使用默认内存缓存（简单稳妥），后续可换 R2
 import { defineCloudflareConfig } from "@opennextjs/cloudflare";
-import r2IncrementalCache from "@opennextjs/cloudflare/overrides/incremental-cache/r2-incremental-cache";
 
-export default defineCloudflareConfig({
-	incrementalCache: r2IncrementalCache,
-});
+export default defineCloudflareConfig({});
