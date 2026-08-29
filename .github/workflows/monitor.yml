@@ -1,0 +1,73 @@
+name: Daily Market Monitor
+
+on:
+  schedule:
+    # 每天 UTC 01:00（北京时间 09:00）采集行情：监控源检查 + 价格采样 + 异常检测
+    # 与 Daily Internal AA Model Sync（UTC 00:00）错开，避免同时写库
+    - cron: "0 1 * * *"
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Trigger market monitor
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          SITE_URL: ${{ secrets.SITE_URL || 'https://aiplan.surveykit.cc' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_TOKEN:-}" ]; then
+            echo "::error::缺少 Secret CRON_TOKEN（应为 sha256('apr-admin:<ADMIN_PASSWORD>') 的 hex 值）"
+            exit 1
+          fi
+
+          # 分批检查监控源：Workers 单次请求抓完所有页面会超时，
+          # 因此每批 4 个源、最多 6 轮（覆盖 16+ 源）；重复调用是安全的（增量，只查未检查过的）
+          total_changed=0; total_checked=0
+          for round in 1 2 3 4 5 6; do
+            url="${SITE_URL%/}/api/cron?token=${CRON_TOKEN}&sources=1&limit=4"
+            echo "== 第 ${round} 轮：${SITE_URL%/}/api/cron?token=***&sources=1&limit=4 =="
+            http_code=$(curl -sS -o body.json -w '%{http_code}' --max-time 180 "$url" || echo "000")
+            echo "HTTP ${http_code}"
+            if [ "$http_code" != "200" ]; then
+              echo "::error::监控请求返回非 200（${http_code}）"
+              head -c 500 body.json || true
+              exit 1
+            fi
+
+            summary=$(node -e '
+              const r = JSON.parse(require("fs").readFileSync("body.json", "utf8"));
+              console.log([r.checkedCount ?? 0, r.changed ?? 0, r.remainingUnchecked ?? 0].join(" "));
+            ')
+            checked=$(echo "$summary" | cut -d" " -f1)
+            changed=$(echo "$summary" | cut -d" " -f2)
+            remaining=$(echo "$summary" | cut -d" " -f3)
+            echo "本批检查 ${checked} 个，变化 ${changed} 个，剩余未检查 ${remaining} 个"
+            total_checked=$((total_checked + checked))
+            total_changed=$((total_changed + changed))
+
+            if [ "$remaining" = "0" ]; then
+              echo "全部监控源本轮已检查完毕"
+              break
+            fi
+          done
+
+          echo "== 监控源汇总：共检查 ${total_checked} 项，变化 ${total_changed} 项 =="
+
+          # 价格采样 + 异常检测（幂等，每天只补一次）
+          url="${SITE_URL%/}/api/cron?token=${CRON_TOKEN}"
+          echo "== 价格采样：/api/cron?token=*** =="
+          http_code=$(curl -sS -o body2.json -w '%{http_code}' --max-time 120 "$url" || echo "000")
+          if [ "$http_code" != "200" ]; then
+            echo "::error::价格采样返回非 200（${http_code}）"
+            head -c 500 body2.json || true
+            exit 1
+          fi
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("body2.json", "utf8"));
+            console.log("价格采样新增:", r.sampled ?? "-", "条");
+            console.log("价格异常:", r.anomalies ?? "-", "条");
+          '
+          echo "== 完成：变化记录可在 /admin/sources 审核确认后入库 =="

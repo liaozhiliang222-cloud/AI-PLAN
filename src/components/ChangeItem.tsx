@@ -14,7 +14,7 @@ export function ChangeItem({ change, nowMs }: { change: ChangeLog; nowMs: number
         : "/changes";
 
   return (
-    <Link href={href} className={`card card-hover block p-4 ${major ? "border-l-[3px] border-l-orange-500" : ""}`}>
+    <article className={`card card-hover block p-4 ${major ? "border-l-[3px] border-l-orange-500" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <span className="tag bg-gray-100 text-gray-600 border-gray-200">{CHANGE_TYPES[change.changeType] || change.changeType}</span>
@@ -27,20 +27,11 @@ export function ChangeItem({ change, nowMs }: { change: ChangeLog; nowMs: number
           {timeAgo(change.detectedAt, nowMs)}
         </time>
       </div>
-      <h3 className={`mt-2 font-semibold ${major ? "text-[15px]" : "text-sm"} text-gray-900`}>{change.title}</h3>
+      <h3 className={`mt-2 font-semibold ${major ? "text-[15px]" : "text-sm"} text-gray-900`}><Link href={href}>{change.title}</Link></h3>
       <p className="mt-1 text-sm text-gray-600 leading-relaxed line-clamp-2">{change.summary}</p>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 text-xs">
-          {change.impactText && (
-            <span className={`num font-medium ${change.impactText.includes("↓") ? "text-red-600" : "text-emerald-600"}`}>
-              {change.impactText.includes("推荐指数") ? "" : ""}
-              {change.impactText}
-            </span>
-          )}
-          {major && !change.impactText && <span />}
-        </div>
-        <span className="text-[11px] text-gray-400">来源：{SOURCE_TYPE[change.sourceType] || change.sourceType}</span>
+      <div className="mt-2 flex items-center justify-end gap-2">
+        {change.sourceUrl && change.sourceTitle ? <a href={change.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-600 hover:underline">来源：{change.sourceTitle} · {SOURCE_TYPE[change.sourceType] || change.sourceType}</a> : null}
       </div>
-    </Link>
+    </article>
   );
 }

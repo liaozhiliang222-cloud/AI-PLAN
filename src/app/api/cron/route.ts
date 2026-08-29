@@ -1,16 +1,25 @@
 import { NextRequest } from "next/server";
+import { db } from "@/lib/db";
 import { adminToken, safeEqual } from "@/lib/auth";
-import { checkAllSourcesWithDraft, samplePricesToday, detectPriceAnomalies } from "@/services/monitor";
+import {
+  checkAllSourcesCore,
+  samplePricesToday,
+  detectPriceAnomalies,
+  countUncheckedToday,
+} from "@/services/monitor";
 import { syncModelsFromAA } from "@/services/modelSync";
 
 export const dynamic = "force-dynamic";
 
 /**
  * 定时任务入口（供外部调度器调用）：
- *   GET /api/cron?token=<sha256(ADMIN_PASSWORD)>            → 价格采样 + 价格异常检测
- *   GET /api/cron?token=...&sources=1                       → 同时检查全部监控源（变化自动生成草稿）
- *   GET /api/cron?token=...&models=1                        → 同步 artificialanalysis.ai 模型排行榜
+ *   GET /api/cron?token=<sha256(ADMIN_PASSWORD)>              → 价格采样 + 价格异常检测
+ *   GET /api/cron?token=...&sources=1                         → 检查监控源（增量：跳过今天已检查的）
+ *   GET /api/cron?token=...&sources=1&limit=4                 → 指定本批检查几个源（1-16，默认 4）
+ *   GET /api/cron?token=...&sources=1&force=1                 → 忽略「今天已检查」，强制全量重查
+ *   GET /api/cron?token=...&models=1                          → 同步 artificialanalysis.ai 模型排行榜
  *
+ * 响应含 remainingUnchecked：调度方循环调用直到为 0 即覆盖全部源。
  * 令牌为 adminToken() 派生的 SHA-256 hex（与登录 Cookie 一致）。
  */
 export async function GET(req: NextRequest) {
@@ -20,14 +29,19 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let checked: Awaited<ReturnType<typeof checkAllSourcesWithDraft>> | undefined;
+  let remainingUnchecked: number | undefined;
+  let checked: Awaited<ReturnType<typeof checkAllSourcesCore>> | undefined;
   if (req.nextUrl.searchParams.get("sources") === "1") {
-    checked = await checkAllSourcesWithDraft();
+    const raw = Number(req.nextUrl.searchParams.get("limit") ?? "4");
+    const limit = Number.isFinite(raw) ? Math.max(1, Math.min(16, Math.trunc(raw))) : 4;
+    const force = req.nextUrl.searchParams.get("force") === "1";
+    checked = await checkAllSourcesCore({ limit, onlyUncheckedToday: !force });
+    remainingUnchecked = await countUncheckedToday();
   }
   const sampled = await samplePricesToday();
   const anomalies = await detectPriceAnomalies();
 
-  let modelSync: { created: number; updated: number } | undefined;
+  let modelSync: Awaited<ReturnType<typeof syncModelsFromAA>> | undefined;
   if (req.nextUrl.searchParams.get("models") === "1") {
     try {
       modelSync = await syncModelsFromAA();
@@ -46,6 +60,7 @@ export async function GET(req: NextRequest) {
     checkedCount: checked?.length,
     changed,
     draftGenerated: drafted,
+    remainingUnchecked,
     modelSync,
   });
 }

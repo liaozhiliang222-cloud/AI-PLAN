@@ -8,6 +8,7 @@ import { checkSourceWithDraft, checkAllSourcesWithDraft, samplePricesToday, dete
 import { generateDraft } from "@/services/draft";
 import { verifyOrigin } from "@/lib/csrf";
 import { safeParseJson } from "@/lib/serialize";
+import { hasCompleteSource, isValidMonitoredChangeValue, normalizeHttpUrl, normalizePlanSourceUrl, sourceMatchesProvider } from "@/lib/source-provenance";
 
 /** 所有写操作统一 CSRF 校验；失败则中断（Server Action 直接抛出即中止） */
 async function guard() {
@@ -25,10 +26,11 @@ function n(f: FormData, k: string): number | null {
   const num = Number(v);
   return Number.isFinite(num) ? num : null;
 }
-
 export async function savePlan(f: FormData) {
   await guard();
   const id = n(f, "id");
+  const providerId = Number(s(f, "providerId"));
+  const provider = await db.provider.findUnique({ where: { id: providerId }, select: { website: true } });
   const scores = {
     ability: clamp(n(f, "ability"), 60),
     quota: clamp(n(f, "quota"), 50),
@@ -37,8 +39,10 @@ export async function savePlan(f: FormData) {
     stability: clamp(n(f, "stability"), 80),
     cnExperience: clamp(n(f, "cnExperience"), 60),
   };
+  const officialUrl = normalizePlanSourceUrl(s(f, "officialUrl"), provider?.website);
+  const requestedStatus = s(f, "status") || "draft";
   const data = {
-    providerId: Number(s(f, "providerId")),
+    providerId,
     name: s(f, "name"),
     slug: s(f, "slug"),
     tagline: s(f, "tagline"),
@@ -53,9 +57,9 @@ export async function savePlan(f: FormData) {
     contextNote: s(f, "contextNote"),
     tools: JSON.stringify(s(f, "tools").split(/[,，]/).map((x) => x.trim()).filter(Boolean)),
     scenarios: JSON.stringify(s(f, "scenarios").split(/[,，]/).map((x) => x.trim()).filter(Boolean)),
-    status: s(f, "status") || "published",
-    officialUrl: s(f, "officialUrl"),
-    lastVerifiedAt: new Date(),
+    status: requestedStatus === "published" && officialUrl ? "published" : "draft",
+    officialUrl,
+    lastVerifiedAt: officialUrl ? new Date() : null,
     score: {
       upsert: {
         create: { ...scores, overall: calcPlanOverall(scores) },
@@ -85,6 +89,22 @@ export async function deletePlan(f: FormData) {
 export async function saveModel(f: FormData) {
   await guard();
   const id = n(f, "id");
+  const editorialData = {
+    strengths: JSON.stringify(s(f, "strengths").split(/\n|；|;/).map((x) => x.trim()).filter(Boolean)),
+    weaknesses: JSON.stringify(s(f, "weaknesses").split(/\n|；|;/).map((x) => x.trim()).filter(Boolean)),
+    recommendedScenarios: JSON.stringify(s(f, "recommendedScenarios").split(/[,，]/).map((x) => x.trim()).filter(Boolean)),
+  };
+
+  // AA fields are immutable in Admin: a forged form submission must not overwrite raw synchronized metrics/provenance.
+  if (id) {
+    const existing = await db.model.findUnique({ where: { id }, select: { aaModelId: true, slug: true } });
+    if (existing?.aaModelId) {
+      await db.model.update({ where: { id }, data: editorialData });
+      revalidatePath("/admin/models");
+      revalidatePath(`/models/${existing.slug}`);
+      redirect("/admin/models");
+    }
+  }
   const scores = {
     coding: clamp(n(f, "coding"), 75),
     agent: clamp(n(f, "agent"), 72),
@@ -104,9 +124,7 @@ export async function saveModel(f: FormData) {
     inputPrice: n(f, "inputPrice"),
     outputPrice: n(f, "outputPrice"),
     releaseDate: s(f, "releaseDate"),
-    strengths: JSON.stringify(s(f, "strengths").split(/\n|；|;/).map((x) => x.trim()).filter(Boolean)),
-    weaknesses: JSON.stringify(s(f, "weaknesses").split(/\n|；|;/).map((x) => x.trim()).filter(Boolean)),
-    recommendedScenarios: JSON.stringify(s(f, "recommendedScenarios").split(/[,，]/).map((x) => x.trim()).filter(Boolean)),
+    ...editorialData,
     score: {
       upsert: { create: { ...scores, overall }, update: { ...scores, overall } },
     },
@@ -124,8 +142,13 @@ export async function saveModel(f: FormData) {
 export async function deleteModel(f: FormData) {
   await guard();
   const id = Number(s(f, "id"));
-  await db.modelScore.deleteMany({ where: { modelId: id } });
-  await db.model.delete({ where: { id } }).catch(() => {});
+  const existing = await db.model.findUnique({ where: { id }, select: { aaModelId: true } });
+  if (!existing) return;
+  if (existing.aaModelId) throw new Error("Artificial Analysis 同步模型不可在后台删除");
+  await db.$transaction(async (tx) => {
+    await tx.modelScore.deleteMany({ where: { modelId: id } });
+    await tx.model.delete({ where: { id } });
+  });
   revalidatePath("/admin/models");
 }
 
@@ -152,6 +175,12 @@ export async function saveChange(f: FormData) {
   const modelSlug = s(f, "modelSlug");
   const from = n(f, "impactFrom");
   const to = n(f, "impactTo");
+  const sourceUrl = normalizeHttpUrl(s(f, "sourceUrl"));
+  const sourceTitle = s(f, "sourceTitle") || null;
+  const checkedRaw = s(f, "checkedAt");
+  const checkedDate = checkedRaw ? new Date(checkedRaw) : null;
+  const checkedAt = checkedDate && !Number.isNaN(checkedDate.getTime()) ? checkedDate : null;
+  const verified = hasCompleteSource(sourceUrl, sourceTitle, checkedAt);
 
   // 根据 slug 反查外键，保证 Plan/Model 详情页能通过 planId/modelId 关联到本变化
   let planId: number | null = null;
@@ -175,9 +204,12 @@ export async function saveChange(f: FormData) {
       summary: s(f, "summary"),
       importance: s(f, "importance") || "normal",
       impactFrom: from, impactTo: to,
-      impactText: from != null && to != null && from !== to ? `推荐指数 ${from} → ${to} ${to > from! ? "↑" : to < from! ? "↓" : ""}` : null,
+      impactText: null,
       sourceType: s(f, "sourceType") || "editorial",
-      verified: true,
+      sourceUrl,
+      sourceTitle,
+      checkedAt,
+      verified,
     },
   });
   revalidatePath("/admin/changelog");
@@ -255,7 +287,7 @@ export async function generateDraftAction(f: FormData) {
 export async function applyReviewAction(f: FormData) {
   await guard();
   const id = Number(s(f, "id"));
-  const item = await db.reviewItem.findUnique({ where: { id } });
+  const item = await db.reviewItem.findUnique({ where: { id }, include: { source: true } });
   if (!item || item.status !== "pending") redirect("/admin/sources");
 
   const planId = n(f, "planId");
@@ -264,29 +296,43 @@ export async function applyReviewAction(f: FormData) {
   const summary = s(f, "summary");
   const from = n(f, "oldValue");
   const to = n(f, "newValue");
+  if (!planId) redirect("/admin/sources?err=missing-plan");
+  if (!isValidMonitoredChangeValue(changeType, to)) redirect("/admin/sources?err=invalid-price-value");
 
-  if (planId && changeType === "price" && to != null && to > 0) {
-    await db.plan.update({
-      where: { id: planId },
-      data: { priceCny: to, lastVerifiedAt: new Date(), trustLevel: "official_detected" },
-    });
+  const plan = await db.plan.findUnique({
+    where: { id: planId },
+    select: { slug: true, provider: { select: { slug: true, website: true } } },
+  });
+  if (!plan) redirect("/admin/sources?err=missing-plan");
+  if (!item.source || !sourceMatchesProvider(item.source.providerSlug, plan.provider.slug)) {
+    redirect("/admin/sources?err=source-provider-mismatch");
   }
-  if (planId) {
-    // 反查 plan slug，补全 entitySlug 以便列表页跳转与详情页关联
-    const plan = await db.plan.findUnique({ where: { id: planId }, select: { slug: true } });
-    await db.changeLog.create({
+  const sourceUrl = normalizePlanSourceUrl(item.source.url, plan.provider.website);
+  const sourceTitle = item.source.label.trim() || null;
+  const checkedAt = new Date();
+  if (!hasCompleteSource(sourceUrl, sourceTitle, checkedAt)) {
+    redirect("/admin/sources?err=incomplete-plan-source");
+  }
+
+  await db.$transaction(async (tx) => {
+    if (changeType === "price" && to != null && to > 0) {
+      await tx.plan.update({
+        where: { id: planId },
+        data: { priceCny: to, lastVerifiedAt: checkedAt, trustLevel: "official_detected" },
+      });
+    }
+    await tx.changeLog.create({
       data: {
-        entityType: "plan", entitySlug: plan?.slug ?? null, planId,
+        entityType: "plan", entitySlug: plan.slug, planId,
         changeType, title: title || `价格调整 ${from ?? "?"} → ${to ?? "?"}`,
         summary: `${summary}（来源：Source Monitor 审核，原记录 ${item.id}）`,
         importance: s(f, "importance") || "normal",
-        impactFrom: from, impactTo: to,
-        impactText: from != null && to != null ? `¥${from} → ¥${to}` : null,
-        sourceType: "official", verified: true,
+        impactFrom: from, impactTo: to, impactText: null,
+        sourceType: "official", sourceUrl, sourceTitle, checkedAt, verified: true,
       },
     });
-  }
-  await db.reviewItem.update({ where: { id }, data: { status: "approved" } });
+    await tx.reviewItem.update({ where: { id }, data: { status: "approved" } });
+  });
   revalidatePath("/admin/sources");
   revalidatePath("/plans");
   revalidatePath("/changes");

@@ -1,189 +1,143 @@
 "use client";
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
-export interface QuizOption {
-  key: string;
-  label: string;
-  desc?: string;
-}
+/** [key, 主标题, 副标题说明] */
+type Option = [string, string, string];
 
-const STEPS: { title: string; multi?: boolean; max?: number; options: QuizOption[] }[] = [
+const STEPS: { key: string; title: string; hint: string; options: Option[] }[] = [
   {
-    title: "每月 AI Coding 预算是多少？",
+    key: "scenario",
+    title: "你主要用它做什么？",
+    hint: "用于匹配套餐标注的适用场景；未标注的套餐不会被排除，只是排序靠后。",
     options: [
-      { key: "free", label: "尽量免费" },
-      { key: "50", label: "¥50 内" },
-      { key: "100", label: "¥100 内" },
-      { key: "200", label: "¥200 内" },
-      { key: "500", label: "¥500 内" },
-      { key: "500p", label: "¥500+" },
+      ["frontend", "前端开发", "组件、页面、UI 还原"],
+      ["fullstack", "全栈开发", "前后端都写"],
+      ["backend", "后端开发", "接口、服务、数据层"],
+      ["agent", "Agent 自动化", "多步任务、自动改代码"],
+      ["debug", "Debug 排错", "定位与修复问题"],
+      ["bigrepo", "大型 Repo", "超大仓库、跨文件重构"],
+      ["light", "轻度 Coding", "补全、小改动"],
+      ["all", "不限场景", "各场景都会用到"],
     ],
   },
   {
-    title: "主要使用场景？（可多选）",
-    multi: true,
+    key: "intensity",
+    title: "你的使用强度大概是多少？",
+    hint: "用于判断套餐额度容量是否够用；不够用的会标注提醒，但不会被直接排除。",
     options: [
-      { key: "frontend", label: "前端 UI" },
-      { key: "fullstack", label: "全栈开发" },
-      { key: "backend", label: "后端开发" },
-      { key: "debug", label: "Debug" },
-      { key: "agent", label: "Agent 自动开发" },
-      { key: "bigrepo", label: "大型项目 / Repo" },
-      { key: "data", label: "数据分析" },
-      { key: "light", label: "轻量 Coding" },
+      ["light", "偶尔使用", "每周几次，零散需求"],
+      ["medium", "日常使用", "每天 2-4 小时"],
+      ["heavy", "重度使用", "每天 6 小时以上"],
     ],
   },
   {
-    title: "使用强度？",
+    key: "budget",
+    title: "每月预算大概多少？",
+    hint: "硬条件，超出预算的套餐会被排除。",
     options: [
-      { key: "light", label: "轻度", desc: "每周几次" },
-      { key: "medium", label: "中度", desc: "每天都会使用" },
-      { key: "heavy", label: "重度", desc: "每天长时间使用 Agent" },
+      ["free", "只看免费", "¥0"],
+      ["100", "¥100 以内", "入门付费档"],
+      ["200", "¥200 以内", "主流个人档"],
+      ["500", "¥500 以内", "进阶 / 小团队"],
+      ["500p", "不限预算", "看效果优先"],
     ],
   },
   {
-    title: "最看重什么？（最多选 2 个）",
-    multi: true,
-    max: 2,
+    key: "region",
+    title: "对区域有要求吗？",
+    hint: "硬条件。国内套餐直连更稳，海外套餐通常不受国内网络影响但需自行评估。",
     options: [
-      { key: "performance", label: "模型性能" },
-      { key: "quota", label: "额度够用" },
-      { key: "cost", label: "价格便宜" },
-      { key: "cnspeed", label: "国内速度" },
-      { key: "context", label: "长上下文" },
-      { key: "stability", label: "稳定性" },
+      ["all", "不限区域", "国内海外都可以"],
+      ["domestic", "只看国内", "直连、可开票、合规友好"],
+      ["overseas", "只看海外", "接受国际网络与支付方式"],
     ],
   },
   {
-    title: "常用的 Coding 工具？",
+    key: "tool",
+    title: "必须官方支持哪个工具？",
+    hint: "硬条件。只保留标记为「官方支持」的套餐，社区验证的不算。",
     options: [
-      { key: "Claude Code", label: "Claude Code" },
-      { key: "Codex", label: "Codex" },
-      { key: "Cursor", label: "Cursor" },
-      { key: "OpenCode", label: "OpenCode" },
-      { key: "VS Code", label: "VS Code" },
-      { key: "官方 CLI", label: "官方工具" },
-      { key: "无所谓", label: "无所谓" },
+      ["无所谓", "无所谓", "不限工具"],
+      ["Claude Code", "Claude Code", "终端 Agent 工作流"],
+      ["Codex", "Codex", "OpenAI 官方 CLI"],
+      ["Cursor", "Cursor", "AI 原生 IDE"],
+      ["OpenCode", "OpenCode", "开源终端方案"],
+      ["VS Code", "VS Code", "编辑器插件"],
+      ["官方 CLI", "官方 CLI", "厂商自带命令行"],
     ],
   },
 ];
 
-type Answers = (string | string[])[];
-
 export function QuizClient() {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Answers>(STEPS.map(() => []));
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const router = useRouter();
-
   const current = STEPS[step];
-  const value = answers[step];
-  const answered = Array.isArray(value) ? value.length > 0 : !!value;
+  const total = STEPS.length;
 
-  function pick(key: string) {
-    if (current.multi) {
-      const arr = [...(value as string[])];
-      const idx = arr.indexOf(key);
-      if (idx >= 0) arr.splice(idx, 1);
-      else if (!current.max || arr.length < current.max) arr.push(key);
-      setAnswers((a) => a.map((v, i) => (i === step ? arr : v)));
+  function pick(value: string) {
+    const next = { ...answers, [current.key]: value };
+    setAnswers(next);
+    if (step === total - 1) {
+      const p = new URLSearchParams(next);
+      router.push(`/recommend/result?${p}`);
     } else {
-      setAnswers((a) => a.map((v, i) => (i === step ? [key] : v)));
-      // 单选自动进入下一步
-      setTimeout(() => go(step + 1, [key]), 150);
+      setStep(step + 1);
     }
-  }
-
-  function finish() {
-    const [budget = "", scenarios = [], usage = "", prefs = [], tool = ""] = answers as [string, string[], string, string[], string];
-    const params = new URLSearchParams();
-    params.set("budget", budget);
-    if (scenarios.length) params.set("scenes", scenarios.join(","));
-    params.set("usage", usage);
-    if (prefs.length) params.set("prefs", prefs.join(","));
-    params.set("tool", tool || "无所谓");
-    router.push(`/recommend/result?${params.toString()}`);
-  }
-
-  function go(next: number, override?: string[]) {
-    if (next >= STEPS.length) {
-      // 校验完整性后提交
-      const filled = override ? answers.map((v, i) => (i === step ? override : v)) : answers;
-      const okToSubmit = filled.every((v) => (Array.isArray(v) ? v.length > 0 : v?.length));
-      if (!okToSubmit) return;
-      const [budget = "", scenarios = [], usage = "", prefs = [], tool = ""] = filled as [string, string[], string, string[], string];
-      const params = new URLSearchParams();
-      params.set("budget", budget);
-      if (scenarios.length) params.set("scenes", scenarios.join(","));
-      params.set("usage", usage);
-      if (prefs.length) params.set("prefs", prefs.join(","));
-      params.set("tool", tool || "无所谓");
-      router.push(`/recommend/result?${params.toString()}`);
-      return;
-    }
-    setStep(next);
   }
 
   return (
     <div className="max-w-xl mx-auto">
       <div className="flex items-center gap-3 mb-5">
-        <span className="num text-sm font-semibold text-blue-600">{step + 1} / {STEPS.length}</span>
-        <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+        <span className="num text-sm font-semibold text-blue-600">
+          {step + 1} / {total}
+        </span>
+        <div className="flex-1 h-1 bg-gray-200 rounded-full">
+          <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${((step + 1) / total) * 100}%` }} />
         </div>
-        <button
-          onClick={() => { setAnswers(STEPS.map(() => [])); setStep(0); }}
-          className="text-gray-400 hover:text-gray-600 p-1"
-          aria-label="重新开始"
-        >
-          <RefreshCw size={15} />
-        </button>
       </div>
 
-      <h1 className="text-lg md:text-xl font-bold text-gray-900 mb-4">{current.title}</h1>
+      <h1 className="text-lg md:text-xl font-bold mb-1.5">{current.title}</h1>
+      <p className="text-xs text-gray-400 mb-4">{current.hint}</p>
 
-      <div className={`grid gap-2 ${step === 4 ? "grid-cols-2 sm:grid-cols-3" : step === 1 ? "grid-cols-2 sm:grid-cols-3" : "sm:grid-cols-2 grid-cols-1"}`}>
-        {current.options.map((o) => {
-          const active = current.multi ? (value as string[]).includes(o.key) : value[0] === o.key;
-          return (
-            <button
-              key={o.key}
-              onClick={() => pick(o.key)}
-              className={`card p-3.5 text-left transition-colors ${active ? "!border-blue-500 bg-blue-50/60 ring-1 ring-blue-500" : "hover:border-gray-300"}`}
-            >
-              <span className="block text-sm font-medium text-gray-900">{o.label}</span>
-              {o.desc && <span className="block text-xs text-gray-400 mt-0.5">{o.desc}</span>}
-            </button>
-          );
-        })}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {current.options.map(([key, label, sub]) => (
+          <button
+            key={key}
+            onClick={() => pick(key)}
+            className={`card p-3.5 text-left hover:border-blue-400 transition-colors ${
+              answers[current.key] === key ? "border-blue-500 bg-blue-50" : ""
+            }`}
+          >
+            <span className="block text-sm font-medium">{label}</span>
+            {sub && <span className="block text-[11px] text-gray-400 mt-0.5">{sub}</span>}
+          </button>
+        ))}
       </div>
-      {current.max && (
-        <p className="mt-2 text-xs text-gray-400">最多可选 {current.max} 项（已选 {(value as string[]).length}）</p>
-      )}
 
       <div className="mt-6 flex items-center justify-between">
-        <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="btn btn-secondary px-4 py-2 text-sm disabled:invisible">
-          <ArrowLeft size={14} /> 上一步
+        <button
+          onClick={() => setStep(Math.max(0, step - 1))}
+          disabled={step === 0}
+          className="btn btn-secondary px-4 py-2 disabled:invisible"
+        >
+          <ArrowLeft size={14} />上一步
         </button>
-        {step < STEPS.length - 1 ? (
-          <button onClick={() => answered && go(step + 1)} disabled={!answered} className="btn btn-primary px-5 py-2 text-sm">
-            下一步 <ArrowRight size={14} />
-          </button>
-        ) : (
-          <button onClick={finish} disabled={!answered} className="btn btn-primary px-5 py-2 text-sm">
-            查看推荐结果 <ArrowRight size={14} />
-          </button>
+        {step > 0 && (
+          <span className="text-[11px] text-gray-400">
+            上一步选的是「{STEPS[step - 1].options.find((o) => o[0] === answers[STEPS[step - 1].key])?.[1] ?? "—"}」
+          </span>
         )}
       </div>
 
-      <p className="mt-8 text-[11px] text-gray-400 text-center leading-relaxed">
-        推荐由规则引擎 + 权重模型生成：模型能力匹配 35% · 预算匹配 25% · 额度匹配 20% · 工具兼容 10% · 地区与稳定性 10%，并按你的偏好动态调整。
+      <p className="mt-8 text-[11px] text-gray-400 text-center">
+        预算、区域与指定工具是硬条件；场景与使用强度用于排序和额度提醒。全程只用官方可核验字段，不生成能力评分。
       </p>
       <p className="mt-1 text-[11px] text-gray-400 text-center">
-        不想回答？直接看<Link href="/plans" className="text-blue-600">排行榜</Link>或 <Link href="/changes" className="text-blue-600">今日行情</Link>。
+        不想筛选？<Link href="/plans" className="text-blue-600">直接浏览套餐参数</Link>
       </p>
     </div>
   );

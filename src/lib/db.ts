@@ -1,101 +1,89 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-
-// 连接参数解析：从 DATABASE_URL 提取 host/user/password/db，
-// 固定 TCP host 到指定 IP（避免 Supabase pooler 多 IP DNS 在 Workers 网络下轮询到不可达 IP）
-// ssl.servername 保持原 hostname 以便 SNI/pgBouncer 路由
-function parsePgConfig(connectionString: string): Record<string, unknown> {
-  const u = new URL(connectionString);
-  return {
-    host: process.env.PG_FIX_IP || u.hostname,
-    port: Number(u.port || 5432),
-    user: decodeURIComponent(u.username),
-    password: decodeURIComponent(u.password),
-    database: u.pathname.replace(/^\//, ""),
-    ssl: {
-      servername: u.hostname,
-      rejectUnauthorized: false,
-    },
-  };
-}
-
-/** 创建 Prisma 客户端：Cloudflare Workers 环境使用 pg driver adapter（纯 JS，无原生引擎）。
-    - 限制连接池大小
-    - 连接错误自动重试（Workers→Supabase 网络偶发抖动） */
-function createClient() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("缺少 DATABASE_URL 环境变量");
-  }
-  const adapter = new PrismaPg({
-    ...parsePgConfig(connectionString),
-    max: 2,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 8000,
-  });
-  const client = new PrismaClient({
-    adapter,
-    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-  });
-  return retryProxy(client);
-}
-
-/** 包装 Prisma 模型方法：连接错误时自动重试 */
-function retryProxy(client: PrismaClient): PrismaClient {
-  return new Proxy(client, {
-    get(target, prop) {
-      if (typeof prop === "string" && isModelName(prop)) {
-        const model: Record<string, unknown> = target[prop as keyof PrismaClient] as never;
-        return new Proxy(model, {
-          get(t, m) {
-            const fn = t[m as string];
-            if (typeof fn !== "function") return fn;
-            return async (...args: unknown[]) => {
-              for (let attempt = 0; attempt < 3; attempt++) {
-                try {
-                  return await (fn as (...a: unknown[]) => Promise<unknown>).apply(t, args);
-                } catch (e) {
-                  if (attempt < 2 && isConnectionError(e)) {
-                    await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
-                    continue;
-                  }
-                  throw e;
-                }
-              }
-            };
-          },
-        });
-      }
-      const v = target[prop as keyof PrismaClient];
-      return typeof v === "function" ? v.bind(target) : v;
-    },
-  });
-}
-
-function isConnectionError(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return (
-    msg.includes("Can't reach database server") ||
-    msg.includes("timeout exceeded when trying to connect") ||
-    msg.includes("Connection closed") ||
-    msg.includes("P1001") ||
-    msg.includes("P1008") ||
-    msg.includes("ECONN") ||
-    msg.includes("ETIMEDOUT") ||
-    msg.includes("Socket timeout")
-  );
-}
+import { isRetryableDbMethod, isTransientDbError } from "@/lib/db-safe";
 
 const MODEL_NAMES = new Set([
   "provider", "plan", "planModel", "model", "planScore", "modelScore",
   "changeLog", "pricePoint", "sourceMonitor", "reviewItem",
 ]);
-function isModelName(s: string): boolean {
-  return MODEL_NAMES.has(s);
+
+function createClient(): PrismaClient {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("缺少 DATABASE_URL 环境变量");
+  const adapter = new PrismaPg({
+    connectionString,
+    // One operation owns this client, so no request-bound socket survives in
+    // the Workers isolate after the operation completes.
+    max: 1,
+    idleTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 5_000,
+  });
+  return new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
 }
 
-export const db = globalForPrisma.prisma ?? createClient();
+async function disconnectClient(client: PrismaClient): Promise<void> {
+  try {
+    await client.$disconnect();
+  } catch (disconnectError) {
+    console.error(JSON.stringify({
+      event: "database_pool_disconnect_failed",
+      severity: "error",
+      message: disconnectError instanceof Error ? disconnectError.message : String(disconnectError),
+    }));
+  }
+}
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+function retryProxy(): PrismaClient {
+  return new Proxy({} as PrismaClient, {
+    get(_target, prop) {
+      if (typeof prop === "string" && MODEL_NAMES.has(prop)) {
+        return new Proxy({}, {
+          get(_modelTarget, method) {
+            if (typeof method !== "string") return undefined;
+            return async (...args: unknown[]) => {
+              const retryable = isRetryableDbMethod(method);
+              const maxAttempts = retryable ? 2 : 1;
+              for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                const client = createClient();
+                const model = client[prop as keyof PrismaClient] as unknown as Record<string, unknown>;
+                const fn = model[method];
+                if (typeof fn !== "function") return fn;
+                try {
+                  return await (fn as (...params: unknown[]) => Promise<unknown>).apply(model, args);
+                } catch (error) {
+                  // Mutations may already have committed before the connection failed.
+                  // Never replay them automatically. Reads get one fresh-connection retry.
+                  if (!isTransientDbError(error) || !retryable || attempt === maxAttempts) throw error;
+                } finally {
+                  await disconnectClient(client);
+                }
+                await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+              }
+              throw new Error("数据库操作未完成");
+            };
+          },
+        });
+      }
+      if (prop === "$transaction") {
+        return async (...args: unknown[]) => {
+          const client = createClient();
+          const transaction = client.$transaction as unknown as (...params: unknown[]) => Promise<unknown>;
+          try {
+            // A transaction is a write boundary: run it once on one client and never replay it.
+            return await transaction.apply(client, args);
+          } finally {
+            await disconnectClient(client);
+          }
+        };
+      }
+      if (prop === "$connect" || prop === "$disconnect") return async () => undefined;
+      return undefined;
+    },
+  });
+}
+
+// The proxy is safe to cache because it keeps no client, pool, or socket.
+export const db = retryProxy();

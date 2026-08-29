@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRICE_BANDS, REGIONS, SCENARIOS, TOOL_FILTERS, SORTS } from "@/lib/config";
+import { PRICE_BANDS, REGIONS, SCENARIOS, TOOL_FILTERS } from "@/lib/config";
 
 function Href({ base, params, k, v, active, label }: { base: string; params: URLSearchParams; k: string; v: string; active: boolean; label: string }) {
   const p = new URLSearchParams(params.toString());
@@ -48,8 +48,8 @@ export function FilterBar({
         })}
       </Group>
       <Group label="排序">
-        {SORTS.map((so) => (
-          <Href key={so.key} base={base} params={params} k="sort" v={so.key} active={(searchParams.sort ?? "overall") === so.key} label={so.label} />
+        {[{ key: "price", label: "价格从低到高" }, { key: "price-desc", label: "价格从高到低" }, { key: "provider", label: "厂商 A-Z" }].map((so) => (
+          <Href key={so.key} base={base} params={params} k="sort" v={so.key} active={(searchParams.sort ?? "price") === so.key} label={so.label} />
         ))}
       </Group>
     </div>

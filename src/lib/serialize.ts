@@ -63,9 +63,38 @@ export function toPlanT(p: Plan & { provider: Provider; score: PlanScore | null 
   };
 }
 
+/** 公开组件与 Client Component 专用 DTO：仅包含可核验的套餐事实字段。 */
+export interface PublicPlanT {
+  id: number; name: string; slug: string;
+  priceCny: number; priceNote: string; billingCycle: string; region: string;
+  quotaType: string; quotaAmount: number | null; quotaUnit: string | null; quotaWindow: string | null;
+  fastQuota: string | null; normalQuota: string | null; contextNote: string | null;
+  tools: string[]; toolCompat: Record<string, string>;
+  /** 额度容量指数 0-100；与 USAGE_DEMAND 比较得出「够用 / 偏紧 / 不够用」 */
+  capacityIndex: number;
+  /** 适用场景 key 列表，取值见 config.ts 的 SCENARIOS */
+  scenarios: string[];
+  officialUrl: string | null; lastVerifiedAt: Date | null;
+  provider: ProviderT;
+}
+
+export function toPublicPlanT(p: Plan & { provider: Provider }): PublicPlanT {
+  return {
+    id: p.id, name: p.name, slug: p.slug,
+    priceCny: p.priceCny, priceNote: p.priceNote, billingCycle: p.billingCycle, region: p.region,
+    quotaType: p.quotaType, quotaAmount: p.quotaAmount, quotaUnit: p.quotaUnit, quotaWindow: p.quotaWindow,
+    fastQuota: p.fastQuota, normalQuota: p.normalQuota, contextNote: p.contextNote,
+    tools: jarr(p.tools), toolCompat: jobj(p.toolCompat),
+    capacityIndex: p.capacityIndex, scenarios: jarr(p.scenarios),
+    officialUrl: p.officialUrl, lastVerifiedAt: p.lastVerifiedAt,
+    provider: { id: p.provider.id, name: p.provider.name, slug: p.provider.slug, country: p.provider.country, logoColor: p.provider.logoColor },
+  };
+}
+
 export interface ModelT {
   id: number; name: string; slug: string; contextK: number | null;
   inputPrice: number | null; outputPrice: number | null; releaseDate: string | null;
+  aaModelId: string | null; aaIndexVersion: string | null; aaFetchedAt: Date | null; aaSourceUrl: string | null;
   strengths: string[]; weaknesses: string[]; recommendedScenarios: string[];
   provider: ProviderT;
   score: Omit<import("@prisma/client").ModelScore, "id" | "modelId"> | null;
@@ -77,6 +106,7 @@ export function toModelT(m: ModelFull): ModelT {
   return {
     id: m.id, name: m.name, slug: m.slug, contextK: m.contextK,
     inputPrice: m.inputPrice, outputPrice: m.outputPrice, releaseDate: m.releaseDate,
+    aaModelId: m.aaModelId, aaIndexVersion: m.aaIndexVersion, aaFetchedAt: m.aaFetchedAt, aaSourceUrl: m.aaSourceUrl,
     strengths: jarr(m.strengths), weaknesses: jarr(m.weaknesses), recommendedScenarios: jarr(m.recommendedScenarios),
     provider: { id: m.provider.id, name: m.provider.name, slug: m.provider.slug, country: m.provider.country, logoColor: m.provider.logoColor },
     score: m.score ?? null,

@@ -6,7 +6,7 @@ import { InstallPrompt, OfflineBanner } from "@/components/InstallPrompt";
 import { ToastHost } from "@/components/ToastHost";
 import { SITE } from "@/lib/config";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const siteUrl = SITE.url;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -52,21 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 
-async function Footer() {
-  // 动态取最近一次数据验证时间（轻量单查询，避免硬编码日期漂移）
-  let lastVerified: string | null = null;
-  try {
-    const { db } = await import("@/lib/db");
-    const latest = await db.plan.findFirst({
-      where: { status: "published" },
-      orderBy: { lastVerifiedAt: "desc" },
-      select: { lastVerifiedAt: true },
-    });
-    if (latest?.lastVerifiedAt) {
-      lastVerified = latest.lastVerifiedAt.toISOString().slice(0, 10);
-    }
-  } catch {}
-
+function Footer() {
   return (
     <footer className="border-t border-gray-200 bg-white mt-8">
       <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-6 text-xs text-gray-400 space-y-2">
@@ -75,8 +61,7 @@ async function Footer() {
           <span>{SITE.slogan}</span>
         </div>
         <p>
-          本站为 MVP 演示版本：价格、额度与评分均为示例数据（后台可编辑），请以官方页面为准。
-          {lastVerified ? `数据更新于 ${lastVerified}。` : ""}
+          套餐价格与额度请通过详情页的厂商官方链接复核；缺少来源的字段标记为待官方复核。模型榜仅展示 Artificial Analysis 原始指标。
         </p>
       </div>
     </footer>

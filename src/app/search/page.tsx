@@ -3,7 +3,9 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { db } from "@/lib/db";
 import { LogoBadge } from "@/components/LogoBadge";
-import { fmtPrice, ctxLabel } from "@/lib/format";
+import { fmtPrice, ctxLabel, quotaLabel } from "@/lib/format";
+import { queryPublicData } from "@/lib/db-safe";
+import { DatabaseUnavailable } from "@/app/_components/DatabaseUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +24,25 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const q = (sp.q ?? "").trim();
 
   // 数据量小，全量拉取后在内存做大小写不敏感过滤（避免 SQLite contains 大小写敏感问题）
-  const [providerRows, planRows, modelRows] = q
-    ? await Promise.all([
-        db.provider.findMany({ select: { id: true, name: true, slug: true, country: true, logoColor: true } }),
-        db.plan.findMany({ include: { provider: true, score: true } }),
-        db.model.findMany({ include: { provider: true, score: true } }),
-      ])
-    : [[], [], []];
+  const result = await queryPublicData("search.all", async () => {
+    if (!q) return null;
+    const [providerRows, planRows, modelRows] = await Promise.all([
+      db.provider.findMany({
+        where: { plans: { some: { status: "published" } } },
+        select: { id: true, name: true, slug: true, country: true, logoColor: true },
+      }),
+      db.plan.findMany({ where: { status: "published" }, include: { provider: true, score: true } }),
+      db.model.findMany({
+        where: { status: "active", aaModelId: { not: null }, aaFetchedAt: { not: null }, aaSourceUrl: { not: null } },
+        include: { provider: true, score: true },
+      }),
+    ]);
+    return { providerRows, planRows, modelRows };
+  }, null);
+  if (!result.available) return <DatabaseUnavailable />;
+  const providerRows = result.data?.providerRows ?? [];
+  const planRows = result.data?.planRows ?? [];
+  const modelRows = result.data?.modelRows ?? [];
 
   const providers = providerRows.filter((p) => ciIncludes(p.name, q) || ciIncludes(p.slug, q)).slice(0, 5);
   const plans = planRows
@@ -80,7 +94,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               href={`/plans/${p.slug}`}
               logo={{ name: p.provider.name, color: p.provider.logoColor }}
               title={`${p.provider.name} ${p.name}`}
-              sub={`${fmtPrice(p.priceCny)}/月 · 综合推荐 ${p.score?.overall ?? "–"} · ${p.tagline}`}
+              sub={`${fmtPrice(p.priceCny)}/月 · ${quotaLabel(p)}`}
+              sourceHref={p.officialUrl}
             />
           ))}
         </Group>
@@ -95,7 +110,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               href={`/models/${m.slug}`}
               logo={{ name: m.provider.name, color: m.provider.logoColor }}
               title={m.name}
-              sub={`${m.provider.name} · 综合 ${m.score?.overall ?? "–"} · 上下文 ${ctxLabel(m.contextK)}`}
+              sub={`${m.provider.name} · 上下文 ${ctxLabel(m.contextK)} · AA Intelligence ${m.score?.overall == null ? "暂无" : m.score.overall.toFixed(1)}`}
             />
           ))}
         </Group>
@@ -128,14 +143,15 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function ResultRow({ href, logo, title, sub }: { href: string; logo: { name: string; color: string }; title: string; sub: string }) {
+function ResultRow({ href, logo, title, sub, sourceHref }: { href: string; logo: { name: string; color: string }; title: string; sub: string; sourceHref?: string | null }) {
   return (
-    <Link href={href} className="flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors">
+    <div className="flex items-center gap-3 p-3 hover:bg-gray-50 transition-colors">
       <LogoBadge name={logo.name} color={logo.color} size={30} />
-      <span className="min-w-0 flex-1">
+      <Link href={href} className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-gray-900 truncate">{title}</span>
         <span className="block text-xs text-gray-400 truncate">{sub}</span>
-      </span>
-    </Link>
+      </Link>
+      {sourceHref ? <a href={sourceHref} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 shrink-0">套餐来源</a> : href.startsWith("/plans/") ? <span className="text-xs text-orange-600 shrink-0">待来源复核</span> : null}
+    </div>
   );
 }

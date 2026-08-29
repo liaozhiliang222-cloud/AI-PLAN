@@ -28,7 +28,7 @@ export default async function AdminPlansPage({ searchParams }: { searchParams: P
           <Field label="价格备注（如 $20/月）"><input name="priceNote" defaultValue={editing?.priceNote} className="inp" /></Field>
           <Field label="区域"><select name="region" defaultValue={editing?.region ?? "domestic"} className="inp"><option value="domestic">国内</option><option value="overseas">海外</option></select></Field>
           <Field label="Tagline"><input name="tagline" defaultValue={editing?.tagline} className="inp sm:col-span-2" /></Field>
-          <Field label="状态"><select name="status" defaultValue={editing?.status ?? "published"} className="inp"><option value="published">published</option><option value="draft">draft</option></select></Field>
+          <Field label="状态"><select name="status" defaultValue={editing?.status ?? "draft"} className="inp"><option value="published">published</option><option value="draft">draft</option></select></Field>
 
           <Field label="额度类型"><select name="quotaType" defaultValue={editing?.quotaType ?? "credits"} className="inp">{["token", "tokens", "credits", "points", "requests"].map((t) => (<option key={t} value={t}>{t}</option>))}</select></Field>
           <Field label="额度数量"><input type="number" name="quotaAmount" defaultValue={editing?.quotaAmount ?? ""} className="inp num" /></Field>
@@ -39,8 +39,9 @@ export default async function AdminPlansPage({ searchParams }: { searchParams: P
 
           <Field label="工具（逗号分隔）" span={2}><input name="tools" defaultValue={jarr(editing?.tools).join(",")} className="inp" /></Field>
           <Field label="场景 keys（逗号分隔）"><input name="scenarios" defaultValue={jarr(editing?.scenarios).join(",")} placeholder="fullstack,agent" className="inp" /></Field>
-          <Field label="官方 URL"><input name="officialUrl" defaultValue={editing?.officialUrl ?? ""} className="inp" /></Field>
-          <Field label="上次验证"><span className="text-xs text-gray-400 pt-2 block">{editing?.lastVerifiedAt ? fmtTime(editing.lastVerifiedAt) : "保存后自动更新为当前时间"}</span></Field>
+          <Field label="套餐级来源 URL"><input name="officialUrl" type="url" placeholder="https://...（具体套餐页）" defaultValue={editing?.officialUrl ?? ""} className="inp" /></Field>
+          <Field label="上次验证"><span className="text-xs text-gray-400 pt-2 block">{editing?.lastVerifiedAt ? fmtTime(editing.lastVerifiedAt) : "尚未通过套餐级来源验证"}</span></Field>
+          <p className="sm:col-span-3 text-[11px] text-orange-700 bg-orange-50 rounded-lg px-3 py-2">只有填写有效 http(s) 具体套餐来源时才能发布；缺失或无效时服务端会强制保存为 draft。厂商首页不应作为套餐级来源。</p>
 
           {/* Plan Scores */}
           <div className="sm:col-span-3 border-t border-gray-100 pt-3 mt-1">

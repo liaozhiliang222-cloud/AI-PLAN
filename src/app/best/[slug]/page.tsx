@@ -2,23 +2,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { queryPublicData } from "@/lib/db-safe";
+import { DatabaseUnavailable } from "@/app/_components/DatabaseUnavailable";
 import { toPlanT } from "@/lib/serialize";
-import { fmtPrice } from "@/lib/format";
+import { fmtPrice, quotaLabel } from "@/lib/format";
 import { LogoBadge } from "@/components/LogoBadge";
 
 export const dynamic = "force-dynamic";
 
 const PAGES: Record<string, { title: string; h1: string; desc: string; max?: number; freeOnly?: boolean; min?: number }> = {
   "under-100": {
-    title: "¥100 内最值得买的 AI Coding Plan（2026）",
-    h1: "¥100 内最佳 AI Coding Plan",
-    desc: "月预算 100 元以内，综合模型能力、额度与工具兼容性筛选出的最值得购买的 AI Coding 套餐。",
+    title: "¥100 内 AI Coding 套餐清单",
+    h1: "¥100 内 AI Coding 套餐",
+    desc: "月标价 100 元以内的已发布套餐，按价格从低到高列出。",
     max: 100,
   },
   "under-200": {
-    title: "¥200 内最值得买的 AI Coding Plan（2026）",
-    h1: "¥200 内最佳 AI Coding Plan",
-    desc: "月预算 200 元以内，综合评分最高的 AI Coding 套餐排行，覆盖主流 Claude Code / OpenCode 兼容方案。",
+    title: "¥200 内 AI Coding 套餐清单",
+    h1: "¥200 内 AI Coding 套餐",
+    desc: "月标价 200 元以内的已发布套餐，按价格从低到高列出。",
     max: 200,
   },
 };
@@ -35,55 +37,57 @@ export default async function BestPage({ params }: { params: Promise<{ slug: str
   const page = PAGES[slug];
   if (!page) notFound();
 
-  const rows = await db.plan.findMany({ where: { status: "published" }, include: { provider: true, score: true } });
+  const result = await queryPublicData("best.list", () => db.plan.findMany({ where: { status: "published" }, include: { provider: true, score: true } }), []);
+  if (!result.available) return <DatabaseUnavailable />;
+  const rows = result.data;
   let plans = rows.map(toPlanT);
   if (page.max != null) plans = plans.filter((p) => p.priceCny > 0 && p.priceCny <= page.max!);
-  plans.sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0));
+  plans.sort((a, b) => a.priceCny - b.priceCny);
   plans = plans.slice(0, 8);
 
   return (
     <article className="max-w-3xl mx-auto">
       <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">{page.h1}</h1>
-      <p className="mt-2 text-sm text-gray-500 leading-relaxed">{page.desc}。榜单按综合推荐指数排序，每月复核。</p>
+      <p className="mt-2 text-sm text-gray-500 leading-relaxed">{page.desc}仅作预算清单，不代表推荐或能力排名。</p>
 
       <ol className="mt-5 space-y-2.5">
         {plans.map((p, i) => (
           <li key={p.id}>
-            <Link href={`/plans/${p.slug}`} className="card card-hover flex items-center gap-4 p-4">
+            <article className="card card-hover flex items-center gap-4 p-4">
               <span className="num text-lg font-bold text-gray-300 w-7">{i + 1}</span>
               <LogoBadge name={p.provider.name} color={p.provider.logoColor} size={34} />
               <span className="min-w-0 flex-1">
-                <span className="block font-medium text-gray-900 truncate text-sm">{p.provider.name} {p.name}</span>
-                <span className="block text-xs text-gray-400 mt-0.5">{p.recommendedFor[0] || p.tagline}</span>
+                <Link href={`/plans/${p.slug}`} className="block font-medium text-gray-900 truncate text-sm">{p.provider.name} {p.name}</Link>
+                <span className="block text-xs text-gray-400 mt-0.5">{quotaLabel(p)}</span>
               </span>
               <span className="text-right shrink-0">
-                <span className="num block font-bold text-blue-600">{p.score?.overall}</span>
                 <span className="num block text-xs text-gray-500">{fmtPrice(p.priceCny)}/月</span>
+                {p.officialUrl ? <a href={p.officialUrl} target="_blank" rel="noopener noreferrer" className="block mt-1 text-xs text-blue-600">套餐来源</a> : <span className="block mt-1 text-xs text-orange-600">待来源复核</span>}
               </span>
-            </Link>
+            </article>
           </li>
         ))}
       </ol>
+      {!plans.length && <p className="card mt-5 p-6 text-center text-sm text-gray-400">暂无该预算范围内的已核验公开套餐。</p>}
 
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify({
             "@context": "https://schema.org",
-            "@type": "ItemList",
+            "@type": "CollectionPage",
             name: page.title,
-            itemListElement: plans.map((p, i) => ({
-              "@type": "ListItem",
-              position: i + 1,
+            hasPart: plans.map((p) => ({
+              "@type": "WebPage",
               url: `/plans/${p.slug}`,
               name: `${p.provider.name} ${p.name}`,
             })),
           }),
         }}
       />
-      <p className="mt-6 text-[11px] text-gray-400">价格与评分为本站示例数据，购买前请以官方定价页为准。</p>
+      <p className="mt-6 text-[11px] text-gray-400">购买前请通过「套餐来源」复核价格与限制；缺少来源的记录会标记为待复核。</p>
       <div className="mt-3">
-        <Link href="/recommend" className="btn btn-primary px-5 py-2.5 inline-flex">按我的需求定制选择 →</Link>
+        <Link href="/plans" className="btn btn-primary px-5 py-2.5 inline-flex">查看全部参数 →</Link>
       </div>
     </article>
   );

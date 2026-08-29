@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { X } from "lucide-react";
-import type { PlanT } from "@/lib/serialize";
+import type { PublicPlanT } from "@/lib/serialize";
 import { readStore, writeAndSync, useFavStore } from "@/hooks/useLocalFavorites";
 import { toast } from "./toast";
-import { fmtPrice } from "@/lib/format";
+import { fmtPrice, quotaLabel } from "@/lib/format";
 import { LogoBadge } from "./LogoBadge";
 
-const FIELD_LABELS = ["价格", "模型", "Coding", "Agent", "额度", "上下文", "国内体验", "工具兼容", "性价比", "综合推荐"] as const;
+const FIELD_LABELS = ["价格", "计费周期", "额度原文", "支持模型", "上下文", "工具兼容"] as const;
 
-export function CompareSection({ allPlans }: { allPlans: PlanT[] }) {
+export function CompareSection({ allPlans }: { allPlans: PublicPlanT[] }) {
   const { store, ready } = useFavStore();
 
   const toggle = (slug: string) => {
@@ -25,7 +25,7 @@ export function CompareSection({ allPlans }: { allPlans: PlanT[] }) {
     writeAndSync(s);
   };
 
-  const picked = store.compare.map((sl) => allPlans.find((p) => p.slug === sl)).filter(Boolean) as PlanT[];
+  const picked = store.compare.map((sl) => allPlans.find((p) => p.slug === sl)).filter(Boolean) as PublicPlanT[];
 
   return (
     <div className="space-y-4">
@@ -36,7 +36,7 @@ export function CompareSection({ allPlans }: { allPlans: PlanT[] }) {
           {!ready ? (
             <Skeletons />
           ) : picked.length === 0 ? (
-            <p className="text-sm text-gray-400 self-center">从下方选择最多 3 个套餐开始对比，或从排行榜点击「对比」按钮加入。</p>
+            <p className="text-sm text-gray-400 self-center">从下方选择最多 3 个套餐对比公开参数。</p>
           ) : (
             picked.map((p) => (
               <span key={p.slug} className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg pl-2 pr-1 py-1 text-sm text-blue-900">
@@ -58,22 +58,20 @@ export function CompareSection({ allPlans }: { allPlans: PlanT[] }) {
       <div>
         <h2 className="text-sm font-semibold text-gray-900 mb-2.5">全部套餐</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-          {allPlans.sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0)).map((p) => {
+          {allPlans.sort((a, b) => a.priceCny - b.priceCny).map((p) => {
             const active = ready && store.compare.includes(p.slug);
             return (
-              <button
-                key={p.slug}
-                onClick={() => toggle(p.slug)}
-                aria-pressed={active}
-                className={`text-left card p-3 transition-colors ${active ? "!border-blue-500 bg-blue-50/50" : "hover:border-gray-300"}`}
-              >
+              <div key={p.slug} className={`card p-3 transition-colors ${active ? "!border-blue-500 bg-blue-50/50" : "hover:border-gray-300"}`}>
+                <button onClick={() => toggle(p.slug)} aria-pressed={active} className="text-left w-full">
                 <div className="flex items-center gap-2">
                   <LogoBadge name={p.provider.name} color={p.provider.logoColor} size={22} />
                   <span className="font-medium text-sm text-gray-900 truncate flex-1">{p.name}</span>
-                  <span className={`num text-xs ${active ? "text-blue-700" : "text-gray-400"} font-semibold`}>{p.score?.overall}</span>
+                  <span className={`num text-xs ${active ? "text-blue-700" : "text-gray-400"} font-semibold`}>{fmtPrice(p.priceCny)}</span>
                 </div>
-                <div className="mt-1 num text-xs text-gray-500">{fmtPrice(p.priceCny)}/月 · {p.region === "domestic" ? "国内" : "海外"}</div>
-              </button>
+                  <div className="mt-1 num text-xs text-gray-500">{fmtPrice(p.priceCny)}/月 · {p.region === "domestic" ? "国内" : "海外"}</div>
+                </button>
+                <div className="mt-2">{p.officialUrl ? <a href={p.officialUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600">套餐来源</a> : <span className="text-xs text-orange-600">待来源复核</span>}</div>
+              </div>
             );
           })}
         </div>
@@ -85,7 +83,7 @@ export function CompareSection({ allPlans }: { allPlans: PlanT[] }) {
   );
 }
 
-export function CompareTable({ plans }: { plans: PlanT[] }) {
+export function CompareTable({ plans }: { plans: PublicPlanT[] }) {
   const rows: { label: string; cells: React.ReactNode[] }[] = [
     {
       label: "价格",
@@ -94,14 +92,17 @@ export function CompareTable({ plans }: { plans: PlanT[] }) {
       )),
     },
     {
-      label: "主力模型",
+      label: "计费周期",
+      cells: plans.map((p) => p.billingCycle || "—"),
+    },
+    {
+      label: "额度原文",
+      cells: plans.map((p) => quotaLabel(p)),
+    },
+    {
+      label: "支持模型 / 上下文",
       cells: plans.map((p) => p.contextNote || "—"),
     },
-    { label: "模型能力 (Coding)", cells: plans.map((p) => <b key={p.slug} className="num text-gray-900">{p.score?.ability ?? "–"}</b>) },
-    { label: "Agent 能力", cells: plans.map((p) => <b key={p.slug} className="num text-gray-900">{Math.min(99, (p.score?.ability ?? 60) + 1)}</b>) },
-    { label: "额度容量指数", cells: plans.map((p) => `${p.capacityIndex}/100`) },
-    { label: "上下文", cells: plans.map((p) => p.contextNote?.match(/(\d+[KM])/i)?.[1] ?? "—") },
-    { label: "国内体验", cells: plans.map((p) => <b key={p.slug} className="num text-gray-900">{p.score?.cnExperience ?? "–"}</b>) },
     {
       label: "工具兼容",
       cells: plans.map((p) => (
@@ -110,8 +111,10 @@ export function CompareTable({ plans }: { plans: PlanT[] }) {
         </span>
       )),
     },
-    { label: "性价比分", cells: plans.map((p) => <b key={p.slug} className="num text-gray-900">{p.score?.price ?? "–"}</b>) },
-    { label: "综合推荐", cells: plans.map((p) => <b key={p.slug} className="num text-base text-blue-600">{p.score?.overall ?? "–"}</b>) },
+    {
+      label: "套餐来源",
+      cells: plans.map((p) => p.officialUrl ? <a key={p.slug} href={p.officialUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">打开套餐来源</a> : <span key={p.slug} className="text-orange-600">待来源复核</span>),
+    },
   ];
 
   return (

@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
+import { ChevronDown } from "lucide-react";
 import { db } from "@/lib/db";
 import { toPlanT, type PlanT } from "@/lib/serialize";
-import { PRICE_BANDS, valuePct } from "@/lib/config";
+import { PRICE_BANDS } from "@/lib/config";
 import { FilterBar } from "@/components/FilterBar";
 import { PlanRow, PlanCardMini } from "@/components/PlanRow";
 import { EmptyState } from "@/components/EmptyState";
-import { fmtTime } from "@/lib/format";
+import { LogoBadge } from "@/components/LogoBadge";
+import { fmtTime, fmtPrice } from "@/lib/format";
+import { queryPublicData } from "@/lib/db-safe";
+import { DatabaseUnavailable } from "@/app/_components/DatabaseUnavailable";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "AI Coding Plan 排行榜 - 价格、额度与推荐指数",
-  description: "综合模型能力、额度、价格、工具兼容性与使用体验评估的 AI Coding 套餐排行榜。",
+  title: "AI Coding 套餐参数目录",
+  description: "按价格、厂商与官方公开参数浏览 AI Coding 套餐。",
   alternates: { canonical: "/plans" },
 };
 
@@ -21,62 +25,85 @@ interface SP {
 
 export default async function PlansPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  const rows = await db.plan.findMany({
+  const result = await queryPublicData("plans.list", () => db.plan.findMany({
     where: { status: "published" },
     include: { provider: true, score: true },
-  });
+  }), []);
+  if (!result.available) return <DatabaseUnavailable />;
+  const rows = result.data;
   const plans = rows.map(toPlanT).filter((p) => filterPlan(p, sp));
 
-  const sort = sp.sort ?? "overall";
+  const sort = sp.sort ?? "price";
   const sorters: Record<string, (a: PlanT, b: PlanT) => number> = {
-    overall: cmp((p) => p.score?.overall),
-    value: cmp((p) => valuePct(p.priceCny) * 0.4 + (p.score?.price ?? 0) * 0.6),
-    coding: cmp((p) => p.score?.ability),
-    agent: cmp((p) => p.score?.ability), // Agent 能力以模型能力为主要代理指标
-    quota: cmp((p) => p.score?.quota ?? p.capacityIndex),
     price: (a, b) => a.priceCny - b.priceCny,
-    heat: cmp((p) => p.score?.heat),
+    "price-desc": (a, b) => b.priceCny - a.priceCny,
+    provider: (a, b) => `${a.provider.name} ${a.name}`.localeCompare(`${b.provider.name} ${b.name}`, "zh-CN"),
   };
-  plans.sort(sorters[sort] || sorters.overall);
+  plans.sort(sorters[sort] || sorters.price);
+
+  // 按厂商分组：组内保持当前排序结果，组间按该厂商最低价排序（选厂商排序时按名称）
+  const groupMap = new Map<string, { provider: PlanT["provider"]; items: PlanT[] }>();
+  for (const p of plans) {
+    const g = groupMap.get(p.provider.slug) ?? { provider: p.provider, items: [] as PlanT[] };
+    g.items.push(p);
+    groupMap.set(p.provider.slug, g);
+  }
+  const groups = [...groupMap.values()];
+  groups.sort((a, b) => {
+    if (sort === "provider") return a.provider.name.localeCompare(b.provider.name, "zh-CN");
+    return Math.min(...a.items.map((p) => p.priceCny)) - Math.min(...b.items.map((p) => p.priceCny));
+  });
 
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">AI Coding Plan 排行榜</h1>
-        <p className="mt-1 text-sm text-gray-500">综合模型能力、额度、价格、工具兼容性与使用体验进行评估。</p>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">AI Coding 套餐参数目录</h1>
+        <p className="mt-1 text-sm text-gray-500">只展示价格、额度原文、工具兼容等可核验事实，不生成站内评分。</p>
         <p className="mt-0.5 text-[11px] text-gray-400">
-          共 {plans.length} 个套餐 · 数据更新于 {rows[0]?.lastVerifiedAt ? fmtTime(rows[0].lastVerifiedAt).slice(0, 10) : "—"} ·
-          Demo 示例数据，以官方页面为准
+          共 {plans.length} 个套餐 · 来自 {groups.length} 个厂商 · 按厂商分组，点击厂商名可折叠 ·
+          数据更新于 {rows[0]?.lastVerifiedAt ? fmtTime(rows[0].lastVerifiedAt).slice(0, 10) : "—"} ·
+          购买前请通过详情页的厂商官方来源复核
         </p>
       </div>
 
       <FilterBar base="/plans" searchParams={sp as Record<string, string | undefined>} />
 
-      <div className="mt-5 hidden md:flex items-center gap-5 px-4 text-[11px] text-gray-400 pb-2">
-        <span className="w-7">#</span><span className="flex-1">Provider / Plan</span><span className="w-20 text-right">价格</span>
-        <span className="w-56 text-center">Coding · 额度 · 性价比</span><span className="text-center">综合</span><span className="w-36">适合场景</span>
-      </div>
-
-      <div className="hidden md:block">
-        {plans.map((p, i) => (
-          <PlanRow key={p.id} rank={i + 1} plan={p} />
-        ))}
-      </div>
-      <div className="md:hidden grid gap-2.5">
-        {plans.map((p, i) => (
-          <PlanCardMini key={p.id} rank={i + 1} plan={p} />
-        ))}
-      </div>
+      {groups.length > 0 && (
+        <div className="mt-5 space-y-2.5">
+          {groups.map((g) => {
+            const minPrice = Math.min(...g.items.map((p) => p.priceCny));
+            return (
+              <details key={g.provider.slug} open className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-lg px-1.5 py-2 transition-colors hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
+                  <LogoBadge name={g.provider.name} color={g.provider.logoColor} size={22} />
+                  <span className="text-sm font-semibold text-gray-900">{g.provider.name}</span>
+                  <span className="tag bg-gray-50 text-gray-600 border-gray-200">{g.items.length} 个</span>
+                  <span className="text-[11px] text-gray-400">{fmtPrice(minPrice)} 起</span>
+                  <ChevronDown size={16} className="ml-auto shrink-0 text-gray-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="mt-1.5">
+                  <div className="hidden md:block">
+                    {g.items.map((p, i) => (
+                      <PlanRow key={p.id} rank={i + 1} plan={p} />
+                    ))}
+                  </div>
+                  <div className="md:hidden grid gap-2.5">
+                    {g.items.map((p, i) => (
+                      <PlanCardMini key={p.id} rank={i + 1} plan={p} />
+                    ))}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
 
       {!plans.length && (
         <EmptyState title="没有符合条件的套餐" desc="试试放宽预算或场景筛选。" cta={{ href: "/plans", label: "重置筛选" }} />
       )}
     </div>
   );
-}
-
-function cmp(get: (p: PlanT) => number | null | undefined) {
-  return (a: PlanT, b: PlanT) => (get(b) ?? 0) - (get(a) ?? 0);
 }
 
 function filterPlan(p: PlanT, sp: SP): boolean {

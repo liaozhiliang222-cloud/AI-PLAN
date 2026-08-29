@@ -8,7 +8,7 @@ import { RadarGlyph } from "./RadarGlyph";
 
 const NAV = [
   { href: "/", label: "首页" },
-  { href: "/plans", label: "Coding Plan" },
+  { href: "/plans", label: "套餐参数" },
   { href: "/models", label: "模型榜" },
   { href: "/compare", label: "套餐对比" },
   { href: "/recommend", label: "帮我选" },

@@ -1,36 +1,37 @@
 import { ImageResponse } from "next/og";
 import { db } from "@/lib/db";
-import { toPlanT } from "@/lib/serialize";
+import { toPublicPlanT } from "@/lib/serialize";
 import { recommend, type QuizAnswers } from "@/lib/recommendation";
 import { OG_SIZE, latinize } from "@/lib/og";
 
-const VALID_BUDGETS = ["free", "50", "100", "200", "500", "500p"];
+const VALID_BUDGETS = ["free", "100", "200", "500", "500p"] as const;
+const VALID_SCENARIOS = ["all", "frontend", "fullstack", "backend", "agent", "debug", "bigrepo", "light"] as const;
 
-/** 推荐结果分享卡：/api/share/og?budget=200&scenes=...&usage=...&prefs=... */
+/** 条件筛选分享卡：/api/share/og?budget=200&region=domestic&tool=Cursor&scenario=fullstack&intensity=medium */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const budget = (VALID_BUDGETS.includes(url.searchParams.get("budget") ?? "") ? url.searchParams.get("budget") : "200") as QuizAnswers["budget"];
-  const usage = (["light", "medium", "heavy"].includes(url.searchParams.get("usage") ?? "") ? url.searchParams.get("usage") : "medium") as QuizAnswers["usage"];
+  const pick = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+    const v = url.searchParams.get(key) ?? "";
+    return (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+  };
   const answers: QuizAnswers = {
-    budget,
-    usage,
-    scenarios: (url.searchParams.get("scenes") ?? "").split(",").filter(Boolean),
-    prefs: (url.searchParams.get("prefs") ?? "").split(",").filter(Boolean),
-    tool: url.searchParams.get("tool") ?? "",
+    scenario: pick("scenario", VALID_SCENARIOS, "all"),
+    intensity: pick("intensity", ["light", "medium", "heavy"] as const, "medium"),
+    budget: pick("budget", VALID_BUDGETS, "200"),
+    region: pick("region", ["all", "domestic", "overseas"] as const, "all"),
+    tool: url.searchParams.get("tool") ?? "无所谓",
   };
 
-  const rows = await db.plan.findMany({ where: { status: "published" }, include: { provider: true, score: true } });
+  const rows = await db.plan.findMany({ where: { status: "published" }, include: { provider: true } });
   let main = "Your Plan";
   let assist = "";
   let price = "-";
-  let match = "-";
   try {
-    const r = recommend(rows.map(toPlanT), answers);
+    const r = recommend(rows.map(toPublicPlanT), answers);
     if (r) {
       main = latinize(`${r.top.plan.provider.name} ${r.top.plan.name}`);
       assist = latinize(`${r.second.plan.provider.name} ${r.second.plan.name}`);
       price = r.top.plan.priceCny === 0 ? "FREE" : `¥${r.top.plan.priceCny}/MO`;
-      match = `${r.top.matchScore}%`;
     }
   } catch {}
 
@@ -49,15 +50,14 @@ export async function GET(req: Request) {
           fontFamily: "sans-serif",
         }}
       >
-        <div style={{ display: "flex", fontSize: 30, letterSpacing: 6, opacity: 0.85 }}>AI PLAN RADAR · MY CODING STACK</div>
+        <div style={{ display: "flex", fontSize: 30, letterSpacing: 6, opacity: 0.85 }}>AI PLAN RADAR · FILTERED CANDIDATES</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ display: "flex", fontSize: 88, fontWeight: 700, lineHeight: 1.15 }}>{main}</div>
           <div style={{ display: "flex", gap: 40, fontSize: 40 }}>
             <span style={{ display: "flex" }}>{price}</span>
-            <span style={{ display: "flex" }}>Match {match}</span>
           </div>
           {assist && (
-            <div style={{ display: "flex", fontSize: 32, opacity: 0.85 }}>Alt pick · {assist}</div>
+            <div style={{ display: "flex", fontSize: 32, opacity: 0.85 }}>Another candidate · {assist}</div>
           )}
         </div>
         <div style={{ display: "flex", fontSize: 26, opacity: 0.7 }}>AI Plan Radar</div>
@@ -66,4 +66,3 @@ export async function GET(req: Request) {
     OG_SIZE,
   );
 }
-

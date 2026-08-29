@@ -4,6 +4,8 @@ import { CHANGE_TYPES } from "@/lib/config";
 import { fmtTime } from "@/lib/format";
 import { ChangeItem } from "@/components/ChangeItem";
 import Link from "next/link";
+import { queryPublicData } from "@/lib/db-safe";
+import { DatabaseUnavailable } from "@/app/_components/DatabaseUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +27,22 @@ export default async function ChangesPage({
 
   // 游标分页：以 id 为游标，取比 before 更旧的一页
   const where = {
+    sourceType: { not: "editorial" },
+    sourceUrl: { not: null },
+    sourceTitle: { not: null },
+    checkedAt: { not: null },
+    verified: true,
     ...(sp.type && sp.type !== "all" ? { changeType: sp.type } : {}),
     ...(before ? { id: { lt: before } } : {}),
   };
 
-  const rows = await db.changeLog.findMany({
+  const result = await queryPublicData("changes.list", () => db.changeLog.findMany({
     where,
     orderBy: { detectedAt: "desc" },
     take: PAGE_SIZE + 1, // 多取一条判断是否还有下一页
-  });
+  }), []);
+  if (!result.available) return <DatabaseUnavailable />;
+  const rows = result.data;
 
   const hasMore = rows.length > PAGE_SIZE;
   const items = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
@@ -74,7 +83,7 @@ export default async function ChangesPage({
       )}
 
       <p className="mt-6 text-[11px] text-gray-400 leading-relaxed">
-        变化由 Source Monitor 定时检测 + 编辑部人工复核后发布；标注「编辑部实测」的内容为本站评测结论，非官方数据。
+        仅展示已核验、非编辑类且具有可点击原始来源的变化记录。
       </p>
     </div>
   );

@@ -26,6 +26,31 @@ export function timeAgo(dt: Date | string, nowMs?: number): string {
   return `${Math.floor(days / 30)} 个月前`;
 }
 
+/**
+ * 套餐额度展示文案。
+ * 优先高速额度原文（信息量最大），其次「额度数值 + 单位」，按量套餐单独标注。
+ * 注意：多数套餐只有 quotaAmount/quotaUnit，没有 fastQuota/normalQuota，
+ * 早期版本只读后两者导致整列显示"额度待官方复核"。
+ */
+export function quotaLabel(p: {
+  fastQuota?: string | null;
+  normalQuota?: string | null;
+  quotaAmount?: number | null;
+  quotaUnit?: string | null;
+  quotaWindow?: string | null;
+}): string {
+  if (p.fastQuota) return p.fastQuota;
+  if (p.quotaAmount != null && p.quotaUnit) {
+    const amount = Number.isInteger(p.quotaAmount) ? p.quotaAmount : Number(p.quotaAmount.toFixed(1));
+    return `${amount} ${p.quotaUnit}`;
+  }
+  // 按量付费套餐：quotaAmount 为空，quotaWindow 标记为 payg
+  if (p.quotaWindow === "payg" || p.quotaUnit === "按量") return "按量计费";
+  if (p.normalQuota) return p.normalQuota;
+  if (p.quotaUnit) return p.quotaUnit;
+  return "额度待官方复核";
+}
+
 export function stars(n: number): string {
   const full = Math.max(0, Math.min(5, Math.round(n)));
   return "★★★★★".slice(0, full) + "☆☆☆☆☆".slice(0, 5 - full);

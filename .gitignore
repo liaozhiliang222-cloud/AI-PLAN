@@ -36,3 +36,6 @@ deno.lock
 .wrangler
 .dev.vars*
 !.dev.vars.example
+
+# GitHub Secrets 复制清单（本地用，勿提交）
+secrets-to-copy.txt

@@ -12,31 +12,39 @@ export default async function AdminModelsPage({ searchParams }: { searchParams: 
     db.model.findMany({ include: { provider: true, score: true }, orderBy: { id: "asc" } }),
   ]);
   const editing = sp.edit ? models.find((m) => m.id === Number(sp.edit)) : undefined;
+  const isAA = Boolean(editing?.aaModelId);
 
   return (
     <div className="space-y-5">
       <section className="card p-4">
         <h2 className="text-sm font-semibold text-gray-900 mb-3">{editing ? `编辑：${editing.name}` : "新建 Model（含评分）"}</h2>
+        {isAA && <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">AA 同步模型：身份、定价、版本和原始指标只读；此处仅可维护本站编辑备注。</p>}
         <form action={saveModel} key={editing?.id ?? "new"} className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <input type="hidden" name="id" value={editing?.id ?? ""} />
-          <Field label="Provider"><select name="providerId" defaultValue={editing?.providerId} className="inp">{providers.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></Field>
-          <Field label="名称"><input name="name" defaultValue={editing?.name} required className="inp" /></Field>
-          <Field label="Slug"><input name="slug" defaultValue={editing?.slug} required pattern="[a-z0-9-]+" className="inp num" /></Field>
-          <Field label="上下文 (K tokens)"><input type="number" name="contextK" defaultValue={editing?.contextK ?? ""} className="inp num" /></Field>
-          <Field label="输入价 ¥/M"><input type="number" step="0.1" name="inputPrice" defaultValue={editing?.inputPrice ?? ""} className="inp num" /></Field>
-          <Field label="输出价 ¥/M"><input type="number" step="0.1" name="outputPrice" defaultValue={editing?.outputPrice ?? ""} className="inp num" /></Field>
-          <Field label="发布日期"><input name="releaseDate" defaultValue={editing?.releaseDate ?? ""} placeholder="2026-08-01" className="inp num" /></Field>
+          <Field label="Provider"><select name="providerId" defaultValue={editing?.providerId} disabled={isAA} className="inp disabled:bg-gray-50">{providers.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></Field>
+          <Field label="名称"><input name="name" defaultValue={editing?.name} required disabled={isAA} className="inp disabled:bg-gray-50" /></Field>
+          <Field label="Slug"><input name="slug" defaultValue={editing?.slug} required pattern="[a-z0-9-]+" disabled={isAA} className="inp num disabled:bg-gray-50" /></Field>
+          <Field label="上下文 (K tokens)"><input type="number" name="contextK" defaultValue={editing?.contextK ?? ""} disabled={isAA} className="inp num disabled:bg-gray-50" /></Field>
+          <Field label="输入价 USD/1M"><input type="number" step="0.01" name="inputPrice" defaultValue={editing?.inputPrice ?? ""} disabled={isAA} className="inp num disabled:bg-gray-50" /></Field>
+          <Field label="输出价 USD/1M"><input type="number" step="0.01" name="outputPrice" defaultValue={editing?.outputPrice ?? ""} disabled={isAA} className="inp num disabled:bg-gray-50" /></Field>
+          <Field label="发布日期"><input name="releaseDate" defaultValue={editing?.releaseDate ?? ""} placeholder="2026-08-01" disabled={isAA} className="inp num disabled:bg-gray-50" /></Field>
           <Field label="优势（分号/换行分隔）"><textarea name="strengths" rows={2} defaultValue={jarr(editing?.strengths).join("；")} className="inp" /></Field>
           <Field label="弱项（分号/换行分隔）"><textarea name="weaknesses" rows={2} defaultValue={jarr(editing?.weaknesses).join("；")} className="inp" /></Field>
           <Field label="推荐场景 keys"><input name="recommendedScenarios" defaultValue={jarr(editing?.recommendedScenarios).join(",")} placeholder="agent,bigrepo" className="inp" /></Field>
-          <div className="sm:col-span-3 border-t border-gray-100 pt-3 mt-1">
-            <h3 className="text-xs font-semibold text-gray-500 mb-2">Model Scores（overall 自动加权计算）</h3>
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-              {[["coding", "Coding"], ["agent", "Agent"], ["frontend", "Frontend"], ["backend", "Backend"], ["debug", "Debug"], ["longContext", "长上下文"], ["speed", "Speed"], ["cost", "Cost"]].map(([k, l]) => (
-                <Field key={k} label={l}><input type="number" min="0" max="100" name={k} defaultValue={((editing?.score ?? {}) as Record<string, number | null>)[k] ?? 75} className="inp num px-2 py-1.5" /></Field>
-              ))}
+          {isAA ? (
+            <div className="sm:col-span-3 border-t border-gray-100 pt-3 mt-1 text-xs text-gray-500">
+              AA 原始快照只读 · Index {editing?.aaIndexVersion ?? "—"} · 抓取时间 {editing?.aaFetchedAt?.toISOString() ?? "—"}
             </div>
-          </div>
+          ) : (
+            <div className="sm:col-span-3 border-t border-gray-100 pt-3 mt-1">
+              <h3 className="text-xs font-semibold text-gray-500 mb-2">本站手工 Model Scores（不进入公开权威榜）</h3>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                {[["coding", "Coding"], ["agent", "Agent"], ["frontend", "Frontend"], ["backend", "Backend"], ["debug", "Debug"], ["longContext", "长上下文"], ["speed", "Speed"], ["cost", "Cost"]].map(([k, l]) => (
+                  <Field key={k} label={l}><input type="number" min="0" max="100" name={k} defaultValue={((editing?.score ?? {}) as Record<string, number | null>)[k] ?? 75} className="inp num px-2 py-1.5" /></Field>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="sm:col-span-3 flex gap-2">
             <button type="submit" className="btn btn-primary px-5 py-2">保存</button>
             {editing && <Link href="/admin/models" className="btn btn-secondary px-4 py-2">取消</Link>}
@@ -48,7 +56,7 @@ export default async function AdminModelsPage({ searchParams }: { searchParams: 
         <table className="w-full text-sm min-w-[640px]">
           <thead><tr className="bg-gray-50 text-left text-xs text-gray-400 border-b border-gray-200">
             <th className="py-2.5 px-3 font-normal">ID</th><th className="font-normal">Model</th><th className="font-normal">Provider</th>
-            <th className="font-normal text-center">Overall</th><th className="font-normal text-center">Coding</th><th className="font-normal text-center">Agent</th>
+            <th className="font-normal text-center">来源</th><th className="font-normal text-center">Intelligence</th><th className="font-normal text-center">Coding</th>
             <th className="px-3 font-normal text-right">操作</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
@@ -57,12 +65,14 @@ export default async function AdminModelsPage({ searchParams }: { searchParams: 
                 <td className="py-2 px-3 num text-gray-400">{m.id}</td>
                 <td className="font-medium text-gray-900">{m.name}</td>
                 <td className="text-gray-500">{m.provider.name}</td>
+                <td className="text-center text-xs text-gray-500">{m.aaModelId ? "AA raw" : "手工"}</td>
                 <td className="num text-center font-semibold text-blue-700">{m.score?.overall ?? "–"}</td>
                 <td className="num text-center text-gray-600">{m.score?.coding ?? "–"}</td>
-                <td className="num text-center text-gray-600">{m.score?.agent ?? "–"}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <Link href={`/admin/models?edit=${m.id}`} className="text-blue-600 hover:text-blue-800 text-xs mr-3">编辑</Link>
-                  <form action={deleteModel} className="inline"><input type="hidden" name="id" value={m.id} /><button className="text-red-500 hover:text-red-700 text-xs">删除</button></form>
+                  {m.aaModelId
+                    ? <span className="text-gray-400 text-xs">同步记录不可删除</span>
+                    : <form action={deleteModel} className="inline"><input type="hidden" name="id" value={m.id} /><button className="text-red-500 hover:text-red-700 text-xs">删除</button></form>}
                 </td>
               </tr>
             ))}

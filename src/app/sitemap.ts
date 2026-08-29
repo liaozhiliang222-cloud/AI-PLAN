@@ -1,15 +1,21 @@
 import type { MetadataRoute } from "next";
 import { db } from "@/lib/db";
+import { queryPublicData } from "@/lib/db-safe";
+import { SITE } from "@/lib/config";
 
-const base = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const base = SITE.url;
 
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [plans, models] = await Promise.all([
-    db.plan.findMany({ select: { slug: true, updatedAt: true } }),
-    db.model.findMany({ select: { slug: true } }),
-  ]);
+  const result = await queryPublicData("sitemap.dynamic", () => Promise.all([
+    db.plan.findMany({ where: { status: "published" }, select: { slug: true, updatedAt: true } }),
+    db.model.findMany({
+      where: { status: "active", aaModelId: { not: null }, aaFetchedAt: { not: null }, aaSourceUrl: { not: null } },
+      select: { slug: true },
+    }),
+  ]), [[], []]);
+  const [plans, models] = result.data;
 
   const statics = ["", "/plans", "/models", "/compare", "/recommend", "/changes", "/best/under-100", "/best/under-200"].map((p) => ({
     url: `${base}${p}`,

@@ -56,7 +56,7 @@ model Plan {
   officialUrl       String?
   lastVerifiedAt    DateTime?
   trustLevel        String    @default("official_verified") // official_verified | official_detected | community_verified | unverified
-  status            String    @default("published") // published | draft
+  status            String    @default("draft") // published | draft；公开发布需通过套餐级来源校验
   models            PlanModel[]
   score             PlanScore?
   changes           ChangeLog[]
@@ -83,9 +83,13 @@ model Model {
   name                 String
   slug                 String    @unique
   contextK             Int? // 千 token
-  inputPrice           Float? // ¥ / M tokens
-  outputPrice          Float?
+  inputPrice           Float? // USD / 1M input tokens
+  outputPrice          Float? // USD / 1M output tokens
   releaseDate          String?
+  aaModelId            String?    @unique // Artificial Analysis stable model id
+  aaIndexVersion       String? // AA Intelligence Index version used by this snapshot
+  aaFetchedAt          DateTime? // When the complete AA API dataset was fetched
+  aaSourceUrl          String? // Canonical Artificial Analysis model page
   strengths            String    @default("[]")
   weaknesses           String    @default("[]")
   recommendedScenarios String    @default("[]")
@@ -115,15 +119,15 @@ model ModelScore {
   id          Int   @id @default(autoincrement())
   modelId     Int   @unique
   model       Model @relation(fields: [modelId], references: [id])
-  overall     Float
-  coding      Float
-  agent       Float
-  frontend    Float
-  backend     Float
-  debug       Float
-  longContext Float
-  speed       Float
-  cost        Float
+  overall     Float? // Raw AA Intelligence Index; null means not measured
+  coding      Float? // Raw AA Coding Index; null means not measured
+  agent       Float? // Raw AA Agentic Index; null means not measured
+  frontend    Float? // Legacy editorial field; AA sync never populates it
+  backend     Float? // Legacy editorial field; AA sync never populates it
+  debug       Float? // Legacy editorial field; AA sync never populates it
+  longContext Float? // Legacy editorial field; AA sync never populates it
+  speed       Float? // Raw AA median output tokens/second
+  cost        Float? // Raw AA Intelligence Index cost per task, USD
   trend       Int   @default(0)
 }
 
@@ -144,6 +148,9 @@ model ChangeLog {
   impactTo    Float?
   impactText  String? // 如 “推荐指数 89 → 92 ↑”
   sourceType  String    @default("official") // official | benchmark | community | editorial
+  sourceUrl   String?
+  sourceTitle String?
+  checkedAt   DateTime?
   detectedAt  DateTime  @default(now())
   verified    Boolean   @default(true)
 }

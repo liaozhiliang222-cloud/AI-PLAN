@@ -1,14 +1,12 @@
 import Link from "next/link";
 import type { PlanT } from "@/lib/serialize";
-import { fmtPrice } from "@/lib/format";
-import { valuePct } from "@/lib/config";
+import { fmtPrice, quotaLabel } from "@/lib/format";
 import { LogoBadge } from "./LogoBadge";
-import { ScoreBadge, TrendBadge } from "./ScoreBadge";
 import { RowActions } from "./RowActions";
 
-/** 排行榜行（桌面表格形态）；移动端请配合 PlanCardMini */
+/** 套餐参数目录行；序号仅表示当前事实排序下的位置。 */
 export function PlanRow({ rank, plan }: { rank: number; plan: PlanT }) {
-  const s = plan.score;
+  const quota = quotaLabel(plan);
   return (
     <div className="card card-hover mb-2 p-3 md:p-4 flex items-center gap-3 md:gap-5">
       <span className="num w-7 shrink-0 text-sm font-semibold text-gray-400">#{rank}</span>
@@ -20,18 +18,9 @@ export function PlanRow({ rank, plan }: { rank: number; plan: PlanT }) {
         </span>
       </Link>
       <div className="hidden sm:block w-20 num text-right text-sm text-gray-900">{fmtPrice(plan.priceCny)}<span className="text-[10px] text-gray-400">/月</span></div>
-      <div className="hidden lg:flex items-center gap-4">
-        <ScoreBadge value={s?.quota} label="额度" size="sm" muted />
-        <ScoreBadge value={s?.ability} label="Coding" size="sm" muted />
-        <ScoreBadge value={valuePct(plan.priceCny)} label="性价比" size="sm" muted />
-      </div>
-      <div className="flex flex-col items-center gap-1 w-12 shrink-0">
-        <ScoreBadge value={s?.overall} />
-        <TrendBadge trend={s?.trend} />
-      </div>
-      <div className="hidden xl:block text-xs text-gray-500 max-w-36 truncate">
-        {plan.scenarios.slice(0, 3).join(" / ")}
-      </div>
+      <div className="hidden lg:block w-52 text-xs text-gray-500 truncate" title={quota}>{quota}</div>
+      <div className="hidden xl:block text-xs text-gray-500 max-w-36 truncate">{plan.priceNote || "请以官方页面为准"}</div>
+      {plan.officialUrl ? <a href={plan.officialUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 shrink-0">套餐来源</a> : <span className="text-xs text-orange-600 shrink-0">待来源复核</span>}
       <RowActions kind="plan" slug={plan.slug} />
     </div>
   );
@@ -39,7 +28,7 @@ export function PlanRow({ rank, plan }: { rank: number; plan: PlanT }) {
 
 /** 移动端卡片 */
 export function PlanCardMini({ rank, plan }: { rank: number; plan: PlanT }) {
-  const s = plan.score;
+  const quota = quotaLabel(plan);
   return (
     <div className="card card-hover p-3.5">
       <div className="flex items-center gap-2.5">
@@ -53,23 +42,11 @@ export function PlanCardMini({ rank, plan }: { rank: number; plan: PlanT }) {
         </div>
         <div className="text-right shrink-0">
           <div className="text-sm font-semibold num text-gray-900">{fmtPrice(plan.priceCny)}</div>
-          <TrendBadge trend={s?.trend} className="justify-end" />
+          <div className="text-[10px] text-gray-400">{plan.priceNote || "/月"}</div>
         </div>
       </div>
-      <div className="mt-2.5 grid grid-cols-4 gap-1.5 text-center">
-        {[
-          ["综合", s?.overall],
-          ["Coding", s?.ability],
-          ["额度", s?.quota],
-          ["性价比", valuePct(plan.priceCny)],
-        ].map(([label, v]) => (
-          <div key={String(label)} className="bg-gray-50 rounded-lg py-1.5">
-            <div className="num text-sm font-semibold text-gray-800">{v == null ? "–" : Math.round(Number(v))}</div>
-            <div className="text-[10px] text-gray-400">{String(label)}</div>
-          </div>
-        ))}
-      </div>
+      <p className="mt-2.5 text-xs text-gray-500 line-clamp-2">{quota}</p>
+      <div className="mt-2 text-right">{plan.officialUrl ? <a href={plan.officialUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600">套餐来源</a> : <span className="text-xs text-orange-600">待来源复核</span>}</div>
     </div>
   );
 }
-

@@ -2,6 +2,7 @@
 
 export const SITE = {
   name: "AI Plan Radar",
+  url: "https://aiplan.surveykit.cc",
   slogan: "选模型、比套餐、看行情。",
   desc: "实时追踪国内外 AI Coding 套餐、模型、价格与额度变化，帮用户找到更适合自己的 AI 开发方案。",
 };

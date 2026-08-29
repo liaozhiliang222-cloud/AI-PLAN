@@ -29,19 +29,16 @@ describe("comparePlans", () => {
     expect(c.advice).toEqual([]);
   });
 
-  it("识别最便宜 / 能力上限 / 均衡", () => {
+  it("只识别最低标价", () => {
     const cheap = makePlan("cheap", "Cheap", "P1", 50, 70, 70);
     const mid = makePlan("mid", "Mid", "P2", 100, 85, 85);
     const top = makePlan("top", "Top", "P3", 200, 90, 95);
     const c = comparePlans([cheap, mid, top]);
     expect(c.cheapest!.slug).toBe("cheap");
-    expect(c.ceiling!.slug).toBe("top");
-    // 均衡 = 非最便宜中综合分最高者（top 90 胜过 mid 85）
-    expect(c.balanced!.slug).toBe("top");
     expect(c.lines.length).toBeGreaterThan(0);
   });
 
-  it("能力未达 90 不输出 Coding 上限结论", () => {
+  it("不输出 Coding 能力结论", () => {
     const a = makePlan("a", "A", "P1", 50, 70, 80);
     const b = makePlan("b", "B", "P2", 100, 80, 85);
     const c = comparePlans([a, b]);

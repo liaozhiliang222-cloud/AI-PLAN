@@ -19,7 +19,7 @@ export default async function AdminSourcesPage({
   const [sources, reviews, plans] = await Promise.all([
     db.sourceMonitor.findMany({ orderBy: { id: "asc" } }),
     db.reviewItem.findMany({ include: { source: true }, orderBy: { createdAt: "desc" }, take: 20 }),
-    db.plan.findMany({ select: { id: true, slug: true, name: true, provider: { select: { name: true } } }, orderBy: [{ providerId: "asc" }, { priceCny: "asc" }] }),
+    db.plan.findMany({ select: { id: true, slug: true, name: true, provider: { select: { name: true, slug: true } } }, orderBy: [{ providerId: "asc" }, { priceCny: "asc" }] }),
   ]);
   const planIdBySlug = new Map(plans.map((p) => [p.slug, p.id]));
 
@@ -33,6 +33,9 @@ export default async function AdminSourcesPage({
       {sp.err === "no-draft" && (
         <p className="card p-3 text-sm text-orange-600 border-orange-200">未能从页面内容解析出价格草稿（可能抓取失败或未含价格数字）。</p>
       )}
+      {sp.err === "source-provider-mismatch" && <p className="card p-3 text-sm text-red-600 border-red-200">审核失败：监控源未绑定 Provider，或与套餐厂商不一致。记录仍保留在待审核队列。</p>}
+      {sp.err === "invalid-price-value" && <p className="card p-3 text-sm text-red-600 border-red-200">审核失败：价格新值必须是大于 0 的有限数字。记录仍保留在待审核队列。</p>}
+      {sp.err === "incomplete-plan-source" && <p className="card p-3 text-sm text-red-600 border-red-200">审核失败：监控源不是可核验的套餐级来源。记录仍保留在待审核队列。</p>}
       {sp.ok && <p className="card p-3 text-sm text-emerald-600 border-emerald-200">已确认入库：套餐价格与 Change Log 已更新。</p>}
 
       {/* 添加监控源 + 快捷操作 */}
@@ -93,6 +96,7 @@ export default async function AdminSourcesPage({
           <ul className="divide-y divide-gray-100">
             {reviews.map((r) => {
               let draft = null;
+              const matchingPlans = r.source?.providerSlug ? plans.filter((p) => p.provider.slug === r.source?.providerSlug) : [];
               try {
                 draft = r.status === "pending" ? readDraft(r.payload) : null;
               } catch {}
@@ -126,13 +130,13 @@ export default async function AdminSourcesPage({
                   </div>
 
                   {/* 确认入库表单（有草稿时展示） */}
-                  {r.status === "pending" && (
+                  {r.status === "pending" && matchingPlans.length > 0 && (
                     <form action={applyReviewAction} className="border border-dashed border-gray-300 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-6 gap-2 items-end bg-gray-50/50">
                       <input type="hidden" name="id" value={r.id} />
                       <F label="关联 Plan">
                         <select name="planId" defaultValue={draft?.planSlug ? planIdBySlug.get(draft.planSlug) ?? "" : ""} required className="inp">
                           <option value="">选择…</option>
-                          {plans.map((p) => (<option key={p.id} value={p.id}>{p.provider.name} {p.name}</option>))}
+                          {matchingPlans.map((p) => (<option key={p.id} value={p.id}>{p.provider.name} {p.name}</option>))}
                         </select>
                       </F>
                       <F label="类型">
@@ -141,7 +145,7 @@ export default async function AdminSourcesPage({
                         </select>
                       </F>
                       <F label="旧值"><input name="oldValue" type="number" step="0.01" defaultValue={draft?.oldValue ?? ""} className="inp num" /></F>
-                      <F label="新值"><input name="newValue" type="number" step="0.01" defaultValue={draft?.newValue ?? ""} className="inp num" /></F>
+                      <F label="新值（价格类型必填）"><input name="newValue" type="number" min="0.01" step="0.01" required defaultValue={draft?.newValue ?? ""} className="inp num" /></F>
                       <F label="标题"><input name="title" defaultValue={draft?.title ?? ""} className="inp" /></F>
                       <div className="flex gap-1.5">
                         <button className="btn btn-primary px-3 py-1.5 text-xs whitespace-nowrap">确认入库</button>
@@ -149,6 +153,11 @@ export default async function AdminSourcesPage({
                       <input type="hidden" name="summary" value={draft?.summary ?? "人工确认的价格变化"} />
                       <input type="hidden" name="importance" value="normal" />
                     </form>
+                  )}
+                  {r.status === "pending" && matchingPlans.length === 0 && (
+                    <p className="border border-orange-200 bg-orange-50 rounded-lg p-3 text-xs text-orange-700">
+                      {r.source?.providerSlug ? `没有找到与监控源 Provider「${r.source.providerSlug}」匹配的套餐，不能确认入库。` : "该待审项没有绑定带 Provider slug 的监控源，不能确认入库。"}
+                    </p>
                   )}
                 </li>
               );
