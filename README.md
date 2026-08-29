@@ -1,6 +1,6 @@
 # AI Plan Radar
 
-> 选模型、比套餐、看行情。AI Coding Plan 比价与选型工具（PWA MVP）。
+> 选模型、比套餐、看资讯。AI Coding Plan 比价与选型工具（PWA MVP）。
 
 ## 快速开始
 
@@ -85,11 +85,11 @@ npm run db:sync-models
 
 ### 增量更新（生产推荐）
 
-`seed` 会 `deleteMany` 清空 Model 表，把 AA 同步来的 600+ 模型一并删除。只更新套餐或行情时，改用增量脚本，不触碰 Model 表：
+`seed` 会 `deleteMany` 清空 Model 表，把 AA 同步来的 600+ 模型一并删除。只更新套餐或资讯时，改用增量脚本，不触碰 Model 表：
 
 ```bash
 npm run db:upsert-plans      # 套餐：按 slug upsert，自动同步 PlanModel 关联
-npm run db:upsert-changes    # 行情：清理失效记录 + 补入已核实的变化
+npm run db:upsert-changes    # 资讯：清理失效记录 + 补入已核实的变化
 ```
 
 两个脚本的数据源都是 `prisma/seed.mjs`，因此 seed 仍是唯一真源；脚本只是把它「增量应用」到生产库，避免重建整个库。加 `--dry` 可先预览改动。

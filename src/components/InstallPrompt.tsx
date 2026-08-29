@@ -57,7 +57,7 @@ export function InstallPrompt() {
       <div className="card shadow-lg p-4 flex items-start gap-3">
         <div className="flex-1">
           <p className="text-sm font-medium text-gray-900">安装 AI Plan Radar</p>
-          <p className="mt-0.5 text-xs text-gray-500 leading-relaxed">添加到主屏幕，随时查看行情与选型建议。</p>
+          <p className="mt-0.5 text-xs text-gray-500 leading-relaxed">添加到主屏幕，随时查看 AI 大模型资讯与选型建议。</p>
           <div className="mt-2.5 flex gap-2">
             <button onClick={install} className="btn btn-primary px-3 py-1.5 text-xs">
               <Download size={13} /> 安装

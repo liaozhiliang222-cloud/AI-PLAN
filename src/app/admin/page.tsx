@@ -36,7 +36,7 @@ export default async function AdminDashboard() {
         <h2 className="text-sm font-semibold text-gray-900">快捷入口</h2>
         <ul className="mt-2 space-y-1.5 text-sm text-gray-600 list-disc pl-5">
           <li><Link className="text-blue-600 hover:underline" href="/admin/plans">Plans 管理</Link>：编辑价格、额度与评分（overall 自动按权重计算）</li>
-          <li><Link className="text-blue-600 hover:underline" href="/admin/changelog">Change Log</Link>：新增行情变化并同步到前台</li>
+          <li><Link className="text-blue-600 hover:underline" href="/admin/changelog">Change Log</Link>：新增 AI 大模型资讯并同步到前台</li>
           <li><Link className="text-blue-600 hover:underline" href="/admin/sources">Sources</Link>：Source Monitor 概念验证与审核队列</li>
         </ul>
       </section>

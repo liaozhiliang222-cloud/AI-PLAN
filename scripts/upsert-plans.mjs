@@ -11,7 +11,15 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRY = process.argv.includes("--dry");
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+// max:1 + 短 idle：Supabase pooler 会掐断空闲连接，多连接复用到已死 socket 时进程会静默退出
+const db = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+    max: 1,
+    idleTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 10_000,
+  }),
+});
 
 // ---------- 从 seed.mjs 提取数据字面量，保证两边同源 ----------
 const seedPath = path.join(__dirname, '..', 'prisma', 'seed.mjs');
@@ -56,6 +64,8 @@ const PLAN_MODELS = {
   'copilot-pro-plus': [['gpt-5-6-terra', 1, true], ['gpt-5-6-sol', 5, false]],
   'copilot-max': [['gpt-5-6-sol', 1, true], ['gpt-5-6-terra', 0.4, false]],
   'codex-plus': [['gpt-5-6-sol', 1, true], ['gpt-5-6-luna', 0.2, false]],
+  'codex-pro-5x': [['gpt-5-6-sol', 1, true], ['gpt-5-6-terra', 0.4, false]],
+  'codex-pro-20x': [['gpt-5-6-sol', 1, true], ['gpt-5-6-terra', 0.4, false]],
   'gemini-ai-pro': [['gemini-3-7-flash', 1, true]],
   'opencode-go': [['deepseek-v4-pro', 1, true], ['glm-5-3', 1, false], ['kimi-k3', 3, false]],
   // 第二批：国内平台

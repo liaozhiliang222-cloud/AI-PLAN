@@ -24,7 +24,7 @@ export default function OfflinePage() {
       </p>
       {lastUpdated && <p className="mt-3 num text-xs text-gray-400">最后更新时间：{lastUpdated}</p>}
       <div className="mt-6 grid grid-cols-2 gap-2.5">
-        {[["/", "首页"], ["/plans", "Coding Plan"], ["/models", "模型榜"], ["/changes", "行情变化"]].map(([href, label]) => (
+        {[["/", "首页"], ["/plans", "Coding Plan"], ["/models", "模型榜"], ["/changes", "AI大模型资讯"]].map(([href, label]) => (
           <Link key={href} href={href} className="card card-hover px-4 py-2.5 text-sm text-gray-700">{label}</Link>
         ))}
       </div>

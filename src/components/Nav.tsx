@@ -12,7 +12,7 @@ const NAV = [
   { href: "/models", label: "模型榜" },
   { href: "/compare", label: "套餐对比" },
   { href: "/recommend", label: "帮我选" },
-  { href: "/changes", label: "行情变化" },
+  { href: "/changes", label: "AI大模型资讯" },
 ];
 
 export function Nav() {

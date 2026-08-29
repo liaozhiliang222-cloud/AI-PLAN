@@ -1,5 +1,5 @@
 /**
- * 行情变化数据维护：清理失效记录 + 补入 2026-08 已核实的真实变化。
+ * AI 大模型资讯数据维护：清理失效记录 + 补入 2026-08 已核实的真实变化。
  * 用法：node -r dotenv/config scripts/upsert-changes.mjs [--dry]
  */
 import { PrismaClient } from "@prisma/client";

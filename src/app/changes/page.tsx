@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 30;
 
 export const metadata: Metadata = {
-  title: "更新日志与 AI Coding 行情变化",
+  title: "AI 大模型资讯 · 更新日志",
   description: "追踪国内外 AI Coding 套餐的新模型、价格变化、额度调整、上下线与规则变更。",
   alternates: { canonical: "/changes" },
 };
@@ -59,7 +59,7 @@ export default async function ChangesPage({
 
   return (
     <div className="max-w-3xl mx-auto">
-      <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">更新日志 · 行情变化</h1>
+      <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">AI 大模型资讯</h1>
       <p className="mt-1 text-sm text-gray-500">
         最近的价格、额度与模型能力变化{lastVerified ? ` · 最新检测于 ${fmtTime(lastVerified)}` : ""}。
       </p>

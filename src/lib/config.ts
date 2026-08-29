@@ -96,6 +96,7 @@ export const SORTS = [
 export const CHANGE_TYPES: Record<string, string> = {
   new_model: "新模型", price: "价格变化", quota: "额度变化",
   launch: "套餐上线", delist: "套餐下架", policy: "规则调整", capability: "能力升级",
+  update: "页面更新",
 };
 
 /** 变化类型联合（与 CHANGE_TYPES 的 key 保持一致，作为全站唯一来源） */

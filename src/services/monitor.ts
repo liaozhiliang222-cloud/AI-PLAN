@@ -27,18 +27,33 @@ export async function checkSourceCore(id: number): Promise<CheckResult> {
   }
   const hash = createHash("sha256").update(content).digest("hex");
   if (src.lastHash && src.lastHash !== hash) {
-    await db.reviewItem.create({
-      data: {
-        sourceId: src.id,
-        payload: JSON.stringify({
-          url: src.url,
-          oldHash: src.lastHash.slice(0, 12),
-          newHash: hash.slice(0, 12),
-          note: "检测到内容变化，待人工/AI 解析",
-        }),
-        status: "pending",
-      },
+    // 自动入库模式（用户要求免人工审核）：官方源页面变化直接写入资讯流。
+    // 同一源当天只记一条，避免动态内容噪音刷屏。
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const dup = await db.changeLog.findFirst({
+      where: { sourceUrl: src.url, detectedAt: { gte: startOfDay } },
+      select: { id: true },
     });
+    if (!dup) {
+      const now = new Date();
+      await db.changeLog.create({
+        data: {
+          entityType: "provider",
+          entitySlug: src.providerSlug,
+          changeType: "update",
+          title: `${src.label} 页面有更新`,
+          summary: "监测到官方页面内容发生变化；具体调整（价格 / 额度 / 档位）请点击下方来源查看官方页面。",
+          importance: "normal",
+          sourceType: "official",
+          sourceUrl: src.url,
+          sourceTitle: src.label,
+          checkedAt: now,
+          detectedAt: now,
+          verified: true,
+        },
+      });
+    }
   }
   await db.sourceMonitor.update({
     where: { id },
