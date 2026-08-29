@@ -12,7 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Trigger market monitor
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Check sources & sample prices
         env:
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
           SITE_URL: ${{ secrets.SITE_URL || 'https://aiplan.surveykit.cc' }}
@@ -24,7 +39,7 @@ jobs:
           fi
 
           # 分批检查监控源：Workers 单次请求抓完所有页面会超时，
-          # 因此每批 4 个源、最多 6 轮（覆盖 16+ 源）；重复调用是安全的（增量，只查未检查过的）
+          # 因此每批 4 个源、最多 6 轮；重复调用安全（增量，只查未检查过的）
           total_changed=0; total_checked=0
           for round in 1 2 3 4 5 6; do
             url="${SITE_URL%/}/api/cron?token=${CRON_TOKEN}&sources=1&limit=4"
@@ -70,4 +85,14 @@ jobs:
             console.log("价格采样新增:", r.sampled ?? "-", "条");
             console.log("价格异常:", r.anomalies ?? "-", "条");
           '
-          echo "== 完成：变化记录可在 /admin/sources 审核确认后入库 =="
+
+      - name: Analyze page updates with LLM
+        # 把「页面更新」原始信号交给 LLM 解析：
+        # 有实质变化（价格/额度/档位）→ 升级为具体资讯进入资讯流；
+        # SPA 空壳 / 无实质变化 → 自动删除，不上页面
+        run: node scripts/analyze-updates.mjs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODELS: ${{ secrets.LLM_MODELS }}

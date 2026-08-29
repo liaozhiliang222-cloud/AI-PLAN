@@ -96,8 +96,9 @@ export const SORTS = [
 export const CHANGE_TYPES: Record<string, string> = {
   new_model: "新模型", price: "价格变化", quota: "额度变化",
   launch: "套餐上线", delist: "套餐下架", policy: "规则调整", capability: "能力升级",
-  update: "页面更新",
 };
+// 注：changeType "update" 是监控采集的内部待解析状态（LLM 解析前的原始信号），
+// 不进 CHANGE_TYPES（资讯页不显示该分类），解析后升级为上述类型或被删除。
 
 /** 变化类型联合（与 CHANGE_TYPES 的 key 保持一致，作为全站唯一来源） */
 export type ChangeTypeKey = keyof typeof CHANGE_TYPES;

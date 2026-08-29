@@ -25,13 +25,15 @@ export default async function ChangesPage({
   const sp = await searchParams;
   const before = sp.before ? Number(sp.before) : undefined;
 
-  // 游标分页：以 id 为游标，取比 before 更旧的一页
+  // 游标分页：以 id 为游标，取比 before 更旧的一页。
+  // changeType "update" 是采集内部的待解析信号（LLM 解析后升级或删除），不上页面。
   const where = {
     sourceType: { not: "editorial" },
     sourceUrl: { not: null },
     sourceTitle: { not: null },
     checkedAt: { not: null },
     verified: true,
+    changeType: { not: "update" },
     ...(sp.type && sp.type !== "all" ? { changeType: sp.type } : {}),
     ...(before ? { id: { lt: before } } : {}),
   };
