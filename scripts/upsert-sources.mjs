@@ -34,8 +34,8 @@ const wanted = new Set(sources.map((s) => s.url));
   for (const s of sources) {
     const prev = await db.sourceMonitor.findFirst({ where: { url: s.url } });
     if (prev) {
-      if (prev.label !== s.label || prev.providerSlug !== s.providerSlug) {
-        if (!DRY) await db.sourceMonitor.update({ where: { id: prev.id }, data: { label: s.label, providerSlug: s.providerSlug } });
+      if (prev.label !== s.label || prev.providerSlug !== s.providerSlug || prev.kind !== (s.kind ?? "page")) {
+        if (!DRY) await db.sourceMonitor.update({ where: { id: prev.id }, data: { label: s.label, providerSlug: s.providerSlug, ...(s.kind ? { kind: s.kind } : {}) } });
         updated++;
         console.log("  UPD " + s.label);
       }

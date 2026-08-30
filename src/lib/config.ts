@@ -129,7 +129,7 @@ export const TOOL_STATUS: Record<string, { label: string; tone: string }> = {
 };
 
 export const SOURCE_TYPE: Record<string, string> = {
-  official: "官方", benchmark: "Benchmark", community: "社区", editorial: "编辑部实测",
+  official: "官方", benchmark: "Benchmark", community: "社区", editorial: "编辑部实测", media: "媒体",
 };
 
 // 模型榜分类 -> 字段

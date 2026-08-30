@@ -1008,6 +1008,16 @@ async function main() {
     { label: "字节 Trae 定价页（SPA）", url: "https://www.trae.com.cn/pricing", providerSlug: "trae" },
     { label: "百度文心快码（SPA）", url: "https://comate.baidu.com", providerSlug: "baidu" },
     { label: "火山方舟（SPA）", url: "https://www.volcengine.com/product/ark", providerSlug: "volcengine" },
+    { label: "腾讯混元官网", url: "https://hunyuan.tencent.com", providerSlug: "tencent" },
+    { label: "腾讯云混元文档", url: "https://cloud.tencent.com/document/product/1729", providerSlug: "tencent" },
+    // 媒体 RSS 源（kind:"rss"）：条目采集 + 关键词预筛 + LLM 筛选（scripts/analyze-rss.mjs）后入库
+    { label: "量子位", url: "https://www.qbitai.com/feed", kind: "rss" },
+    { label: "InfoQ 中文", url: "https://www.infoq.cn/feed", kind: "rss" },
+    { label: "少数派", url: "https://sspai.com/feed", kind: "rss" },
+    { label: "TechCrunch AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/", kind: "rss" },
+    { label: "VentureBeat AI", url: "https://venturebeat.com/category/ai/feed/", kind: "rss" },
+    { label: "The Verge", url: "https://www.theverge.com/rss/index.xml", kind: "rss" },
+    { label: "Hacker News(AI)", url: "https://hnrss.org/newest?q=AI+model&count=20", kind: "rss" },
   ];
   for (const s of monitorSources) await db.sourceMonitor.create({ data: s });
 

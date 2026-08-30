@@ -51,7 +51,11 @@ export default async function ChangesPage({
   const nextCursor = items.length ? items[items.length - 1].id : undefined;
 
   const nowMs = Date.now();
-  const lastVerified = items[0]?.detectedAt;
+  // 「最新检测」读监控源的真实检查时间（含 RSS 源），而不是最新资讯条目时间——
+  // 后者在没有新资讯时会显得"很久没检测"，具有误导性。
+  const agg = await queryPublicData("changes.lastCheck", () =>
+    db.sourceMonitor.aggregate({ _max: { lastCheckedAt: true } }), { _max: { lastCheckedAt: null } });
+  const lastVerified = agg.data._max.lastCheckedAt ?? items[0]?.detectedAt;
 
   // 构造下一页链接，保留 type 筛选
   const nextParams = new URLSearchParams();

@@ -163,7 +163,7 @@ async function persistModel(model, dataset, providerCache) {
     });
     return "updated";
   }
-  await db.model.create({
+  const createdModel = await db.model.create({
     data: {
       ...sourceData,
       contextK: null,
@@ -173,6 +173,34 @@ async function persistModel(model, dataset, providerCache) {
       score: { create: { ...score, trend: 0 } },
     },
   });
+  // 新模型自动进入资讯流（AA 同步是模型发布的权威发现渠道，此前只写模型表不上资讯页）
+  const newsExists = await db.changeLog.findFirst({
+    where: { changeType: "new_model", entitySlug: mapped.slug, sourceType: "benchmark" },
+    select: { id: true },
+  });
+  if (!newsExists) {
+    await db.changeLog.create({
+      data: {
+        entityType: "model",
+        entityId: createdModel.id,
+        modelId: createdModel.id,
+        entitySlug: mapped.slug,
+        changeType: "new_model",
+        title: `AA 收录新模型：${mapped.name}`.slice(0, 60),
+        summary:
+          `${mapped.creatorName} ${mapped.name} 进入 Artificial Analysis 榜单；` +
+          `智能指数 ${mapped.overall ?? "—"}、编码指数 ${mapped.coding ?? "—"}、` +
+          `输出速度 ${mapped.speed != null ? Math.round(mapped.speed) + " tok/s" : "—"}。`.slice(0, 300),
+        importance: "normal",
+        sourceType: "benchmark",
+        sourceUrl: mapped.sourceUrl,
+        sourceTitle: "Artificial Analysis",
+        checkedAt: new Date(),
+        detectedAt: new Date(),
+        verified: true,
+      },
+    });
+  }
   return "created";
 }
 

@@ -28,6 +28,11 @@
 		"enabled": true,
 		"head_sampling_rate": 1
 	},
+	// Cloudflare 原生定时采集（UTC 01/07/13/19 = 北京 09/15/21/03）。
+	// scheduled handler 由 scripts/patch-wasm.mjs 注入 worker.js，循环调 /api/cron。
+	"triggers": {
+		"crons": ["0 1,7,13,19 * * *"]
+	},
 	"vars": {
 		"NEXTJS_ENV": "production",
 		"LLM_BASE_URL": "http://api.surveykit.cc/v1",

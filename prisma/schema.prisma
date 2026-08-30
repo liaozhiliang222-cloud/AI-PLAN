@@ -168,8 +168,9 @@ model SourceMonitor {
   label          String
   url            String
   providerSlug   String?
+  kind           String    @default("page") // page=官方页面哈希比对 | rss=媒体 RSS 条目采集
   lastHash       String?
-  lastContent    String?
+  lastContent    String? // page:页面文本快照；rss:已见条目 guid JSON
   lastCheckedAt  DateTime?
   enabled        Boolean   @default(true)
   reviewItems    ReviewItem[]

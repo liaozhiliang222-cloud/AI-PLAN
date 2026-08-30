@@ -79,7 +79,7 @@ confidence: 0 到 1 的小数
 
 (async () => {
   const signals = await db.changeLog.findMany({
-    where: { changeType: "update", sourceUrl: { not: null } },
+    where: { changeType: "update", sourceType: "official", sourceUrl: { not: null } },
     orderBy: { detectedAt: "asc" },
   });
   console.log("待解析的页面更新信号:", signals.length, "条\n");
@@ -147,7 +147,7 @@ confidence: 0 到 1 的小数
   }
 
   console.log(`\n升级 ${upgraded} / 删除 ${deleted} / 保留待重试 ${kept}（失败 ${failed}）`);
-  const remain = await db.changeLog.count({ where: { changeType: "update" } });
+  const remain = await db.changeLog.count({ where: { changeType: "update", sourceType: "official" } });
   console.log("剩余未解析信号:", remain, "条");
   await db.$disconnect();
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

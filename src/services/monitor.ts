@@ -1,6 +1,7 @@
 /* Source Monitor 与价格采样服务（被 Admin Server Actions 与 Cron 路由共用） */
 
 import { createHash } from "crypto";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { generateDraft } from "./draft";
 import { safeParseJson } from "@/lib/serialize";
@@ -127,11 +128,13 @@ async function mapLimit<T>(items: T[], limit: number, fn: (x: T) => Promise<void
 export async function checkAllSourcesWithDraft(
   opts: { limit?: number; onlyUncheckedToday?: boolean } = {},
 ): Promise<CheckResult[]> {
-  const where: { enabled: boolean; lastCheckedAt?: { lt: Date } } = { enabled: true };
+  // 注意：只UncheckedToday 时必须包含 lastCheckedAt=null 的新源，
+  // 否则新建源永远轮不到首次检查（与 countUncheckedToday 的口径保持一致）
+  const where: Prisma.SourceMonitorWhereInput = { enabled: true, kind: "page" };
   if (opts.onlyUncheckedToday) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    where.lastCheckedAt = { lt: start };
+    where.OR = [{ lastCheckedAt: null }, { lastCheckedAt: { lt: start } }];
   }
   const sources = await db.sourceMonitor.findMany({
     where,
@@ -157,11 +160,12 @@ export async function checkAllSourcesWithDraft(
 export async function checkAllSourcesCore(
   opts: { limit?: number; onlyUncheckedToday?: boolean } = {},
 ): Promise<CheckResult[]> {
-  const where: { enabled: boolean; lastCheckedAt?: { lt: Date } } = { enabled: true };
+  // 与 countUncheckedToday 口径一致：null（从未检查）也算未检查
+  const where: Prisma.SourceMonitorWhereInput = { enabled: true, kind: "page" };
   if (opts.onlyUncheckedToday) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    where.lastCheckedAt = { lt: start };
+    where.OR = [{ lastCheckedAt: null }, { lastCheckedAt: { lt: start } }];
   }
   const sources = await db.sourceMonitor.findMany({
     where,
@@ -182,12 +186,12 @@ export async function checkAllSourcesCore(
   return out;
 }
 
-/** 剩余今天尚未检查的启用源数量（调度方循环调用直到为 0） */
+/** 剩余今天尚未检查的启用源数量（调度方循环调用直到为 0；只统计 page 类源） */
 export async function countUncheckedToday(): Promise<number> {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   return db.sourceMonitor.count({
-    where: { enabled: true, OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: start } }] },
+    where: { enabled: true, kind: "page", OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: start } }] },
   });
 }
 
@@ -275,4 +279,133 @@ export async function detectPriceAnomalies(thresholdPct = 20): Promise<number> {
   }
   if (rows.length) await db.reviewItem.createMany({ data: rows });
   return rows.length;
+}
+
+/* ==================== 媒体 RSS 采集 ==================== */
+
+/** 关键词预筛（小写匹配）：命中任一才入待审队列，其余直接丢弃，节省 LLM 筛选成本 */
+const RSS_KEYWORDS = [
+  // 厂商 / 模型（中英）
+  "openai", "anthropic", "claude", "gemini", "deepseek", "kimi", "moonshot", "qwen", "通义", "阿里",
+  "glm", "智谱", "zhipu", "混元", "hunyuan", "minimax", "豆包", "doubao", "trae", "cursor",
+  "copilot", "windsurf", "devin", "cline", "replit", "grok", "xiaomi", "mi-mo", "mimo",
+  "文心", "ernie", "comate", "qoder", "codebuddy", "volcengine", "llama", "mistral",
+  // 套餐 / 商业化词
+  "定价", "价格", "订阅", "套餐", "额度", "积分", "提价", "降价", "收费",
+  "pricing", "subscription", "plan", "credit", "quota", "rate limit",
+  // 发布词
+  "发布", "上线", "模型", "release", "launch", "announc",
+];
+
+/** 每源每日入库上限（LLM 筛选前），防止泛科技源刷屏 */
+const RSS_DAILY_CAP = 5;
+/** 单次拉取每源最多入库条数 */
+const RSS_RUN_CAP = 10;
+
+type FeedItem = { guid: string; title: string; link: string; description: string };
+
+function xmlText(s: string | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 轻量 RSS2/Atom 解析（受控源列表，正则足够；不引第三方 XML 依赖） */
+function parseFeedItems(xml: string): FeedItem[] {
+  const out: FeedItem[] = [];
+  const blocks = [...xml.matchAll(/<(item|entry)[\s\S]*?<\/\1>/gi)];
+  for (const b of blocks) {
+    const blk = b[0];
+    const pick = (re: RegExp): string | undefined => {
+      const m = blk.match(re);
+      return m ? xmlText(m[1]) : undefined;
+    };
+    const title = pick(/<title[^>]*>([\s\S]*?)<\/title>/i) ?? "";
+    const link =
+      pick(/<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i) ?? pick(/<link[^>]*>([\s\S]*?)<\/link>/i) ?? "";
+    const description =
+      pick(/<description[^>]*>([\s\S]*?)<\/description>/i) ??
+      pick(/<summary[^>]*>([\s\S]*?)<\/summary>/i) ??
+      pick(/<content[^>]*>([\s\S]*?)<\/content>/i) ?? "";
+    const guid = pick(/<guid[^>]*>([\s\S]*?)<\/guid>/i) ?? pick(/<id[^>]*>([\s\S]*?)<\/id>/i) ?? (link || title);
+    if (!guid || !title) continue;
+    out.push({ guid, title, link, description });
+  }
+  return out;
+}
+
+/**
+ * 拉取全部 RSS 媒体源：新条目 → 关键词预筛 → 入 ChangeLog 待审队列。
+ * LLM 筛选（scripts/analyze-rss.mjs）在 GitHub Actions 侧执行，通过 verified=true 上页面，
+ * 不入页面（verified=false 且 changeType=update 双重隐藏），Workers 侧无 LLM 调用。
+ * 已见条目 guid 存 SourceMonitor.lastContent（JSON），跨次去重。
+ */
+export async function fetchRssSources(): Promise<{ feeds: number; inserted: number }> {
+  const feeds = await db.sourceMonitor.findMany({ where: { enabled: true, kind: "rss" } });
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  let inserted = 0;
+
+  for (const feed of feeds) {
+    let ok = false;
+    try {
+      const res = await fetch(feed.url, {
+        headers: { "User-Agent": "AIPlanRadarBot/0.1 (+monitor)" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) {
+        ok = true;
+        const xml = await res.text();
+        const items = parseFeedItems(xml);
+        const prev = safeParseJson<{ seen?: string[] }>(feed.lastContent ?? "", {});
+        const seen = new Set(prev.seen ?? []);
+        const fresh = items.filter((it) => !seen.has(it.guid));
+        for (const it of items) seen.add(it.guid);
+
+        const todayCount = await db.changeLog.count({
+          where: { sourceType: "media", sourceUrl: feed.url, detectedAt: { gte: startOfDay } },
+        });
+        let feedInserted = 0;
+        for (const it of fresh) {
+          if (feedInserted >= RSS_RUN_CAP || todayCount + feedInserted >= RSS_DAILY_CAP) break;
+          const hay = (it.title + " " + it.description).toLowerCase();
+          if (!RSS_KEYWORDS.some((k) => hay.includes(k))) continue;
+          const now = new Date();
+          await db.changeLog.create({
+            data: {
+              entityType: "provider",
+              changeType: "update",
+              title: it.title.slice(0, 120),
+              summary: (it.description || it.title).slice(0, 300),
+              importance: "normal",
+              sourceType: "media",
+              sourceUrl: it.link || feed.url,
+              sourceTitle: feed.label,
+              checkedAt: now,
+              detectedAt: now,
+              verified: false, // 待 LLM 筛选：通过后置 true 并改写为具体资讯
+            },
+          });
+          feedInserted++;
+        }
+        inserted += feedInserted;
+
+        await db.sourceMonitor.update({
+          where: { id: feed.id },
+          data: { lastContent: JSON.stringify({ seen: [...seen].slice(-300) }), lastCheckedAt: new Date() },
+        });
+      }
+    } catch {
+      /* 抓取失败：仅更新检查时间，下轮重试 */
+    }
+    if (!ok) {
+      await db.sourceMonitor.update({ where: { id: feed.id }, data: { lastCheckedAt: new Date() } });
+    }
+  }
+  return { feeds: feeds.length, inserted };
 }

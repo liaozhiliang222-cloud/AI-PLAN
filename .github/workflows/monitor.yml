@@ -2,9 +2,10 @@ name: Daily Market Monitor
 
 on:
   schedule:
-    # 每天 UTC 01:00（北京时间 09:00）采集行情：监控源检查 + 价格采样 + 异常检测
-    # 与 Daily Internal AA Model Sync（UTC 00:00）错开，避免同时写库
-    - cron: "0 1 * * *"
+    # 每 6 小时一次（UTC 02/08/14/20，北京时间 10/16/22/04）。
+    # 主采集已由 Cloudflare Workers 原生 cron 承担（UTC 01/07/13/19，见 wrangler.jsonc），
+    # 这里错开 1 小时：既是备份采集，也负责跑 LLM 分析（页面更新信号 + 媒体 RSS 条目筛选）。
+    - cron: "0 2,8,14,20 * * *"
   workflow_dispatch: # 允许手动触发
 
 jobs:
@@ -86,11 +87,33 @@ jobs:
             console.log("价格异常:", r.anomalies ?? "-", "条");
           '
 
+          # 媒体 RSS 采集（拉取 + 关键词预筛 + 入待审队列，Workers 侧无 LLM 调用）
+          url="${SITE_URL%/}/api/cron?token=${CRON_TOKEN}&rss=1"
+          echo "== RSS 采集：/api/cron?token=***&rss=1 =="
+          http_code=$(curl -sS -o body3.json -w '%{http_code}' --max-time 180 "$url" || echo "000")
+          if [ "$http_code" != "200" ]; then
+            echo "::warning::RSS 采集返回非 200（${http_code}），跳过"
+          else
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync("body3.json", "utf8"));
+              console.log("RSS 源:", r.rss?.feeds ?? "-", "个，新入待审:", r.rss?.inserted ?? "-", "条");
+            '
+          fi
+
       - name: Analyze page updates with LLM
         # 把「页面更新」原始信号交给 LLM 解析：
         # 有实质变化（价格/额度/档位）→ 升级为具体资讯进入资讯流；
         # SPA 空壳 / 无实质变化 → 自动删除，不上页面
         run: node scripts/analyze-updates.mjs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODELS: ${{ secrets.LLM_MODELS }}
+
+      - name: Filter media RSS entries with LLM
+        # 媒体条目二道筛：含具体事实 → 改写发布；纯观点/软文/盘点 → 删除；失败 → 保留重试
+        run: node scripts/analyze-rss.mjs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}

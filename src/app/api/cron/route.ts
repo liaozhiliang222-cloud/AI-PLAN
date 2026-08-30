@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
-import { db } from "@/lib/db";
 import { adminToken, safeEqual } from "@/lib/auth";
 import {
   checkAllSourcesCore,
   samplePricesToday,
   detectPriceAnomalies,
   countUncheckedToday,
+  fetchRssSources,
 } from "@/services/monitor";
 import { syncModelsFromAA } from "@/services/modelSync";
 
@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
  *   GET /api/cron?token=...&sources=1                         → 检查监控源（增量：跳过今天已检查的）
  *   GET /api/cron?token=...&sources=1&limit=4                 → 指定本批检查几个源（1-16，默认 4）
  *   GET /api/cron?token=...&sources=1&force=1                 → 忽略「今天已检查」，强制全量重查
+ *   GET /api/cron?token=...&rss=1                             → 拉取媒体 RSS 源（新条目关键词预筛后入待审队列）
  *   GET /api/cron?token=...&models=1                          → 同步 artificialanalysis.ai 模型排行榜
  *
  * 响应含 remainingUnchecked：调度方循环调用直到为 0 即覆盖全部源。
@@ -50,6 +51,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const rss = req.nextUrl.searchParams.get("rss") === "1" ? await fetchRssSources() : undefined;
+
   const changed = checked?.filter((c) => c.status === "changed").length ?? 0;
   const drafted = checked?.filter((c) => c.draftGenerated).length ?? 0;
 
@@ -62,5 +65,6 @@ export async function GET(req: NextRequest) {
     draftGenerated: drafted,
     remainingUnchecked,
     modelSync,
+    rss,
   });
 }
