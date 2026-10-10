@@ -124,13 +124,29 @@ async function ensureProvider(creatorName, cache) {
   return provider.id;
 }
 
+async function releaseSlug(stale, mapped) {
+  const legacySlug = `${stale.slug}-legacy-${stale.id}`;
+  console.warn(
+    `[sync-models] slug "${mapped.slug}" conflict: model #${stale.id} (aaModelId=${stale.aaModelId}) renamed to "${legacySlug}" for ${mapped.aaModelId}`,
+  );
+  await db.model.update({ where: { id: stale.id }, data: { slug: legacySlug } });
+}
+
 async function persistModel(model, dataset, providerCache) {
   const mapped = mapModel(model);
   const providerId = await ensureProvider(mapped.creatorName, providerCache);
-  const existing = await db.model.findFirst({
-    where: { OR: [{ aaModelId: mapped.aaModelId }, { slug: mapped.slug }] },
-    include: { score: true },
-  });
+  // 先按 AA 稳定 id 匹配，找不到再按 slug 回退；AA 可能把 slug 重新分配给另一个模型 id
+  const byAaId = await db.model.findUnique({ where: { aaModelId: mapped.aaModelId }, include: { score: true } });
+  const bySlug = await db.model.findUnique({ where: { slug: mapped.slug }, include: { score: true } });
+  let existing = byAaId ?? bySlug;
+  if (bySlug && bySlug.id !== existing.id) {
+    // slug 被另一条旧记录占用：先给旧记录改名释放 slug，避免 slug 唯一约束冲突
+    await releaseSlug(bySlug, mapped);
+  } else if (!byAaId && bySlug?.aaModelId && bySlug.aaModelId !== mapped.aaModelId) {
+    // slug 匹配到的记录属于另一个 AA 模型（AA 重新分配了 slug）：不覆盖它，释放 slug 后新建
+    await releaseSlug(bySlug, mapped);
+    existing = null;
+  }
   const score = {
     overall: mapped.overall,
     coding: mapped.coding,
