@@ -6,9 +6,14 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch: # 允许手动触发
 
+concurrency:
+  group: aa-model-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4

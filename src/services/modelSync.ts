@@ -1,6 +1,7 @@
 /* Artificial Analysis internal synchronization.
    Free API data must not be exposed as a mirrored public leaderboard. */
 import { db } from "@/lib/db";
+import { findExistingAAModel, prepareAAModelSlugs } from "../../scripts/lib/aa-model-identity.mjs";
 
 const API_URL = "https://artificialanalysis.ai/api/v2/language/models/free";
 const AA_MODELS_URL = "https://artificialanalysis.ai/models";
@@ -187,7 +188,7 @@ async function ensureProvider(creatorName: string, cache?: Map<string, number>):
 async function persistAAModel(model: AAModel, dataset: AADataset, providerCache?: Map<string, number>): Promise<"created" | "updated"> {
   const mapped = mapAAModel(model);
   const providerId = await ensureProvider(mapped.creatorName, providerCache);
-  const existing = await db.model.findFirst({ where: { OR: [{ aaModelId: mapped.aaModelId }, { slug: mapped.slug }] }, include: { score: true } });
+  const existing = await findExistingAAModel(db, mapped);
   const score = {
     overall: mapped.overall, coding: mapped.coding, agent: mapped.agent,
     frontend: null, backend: null, debug: null, longContext: null,
@@ -224,6 +225,8 @@ type SyncDependencies = {
 /** Complete loading always finishes before the first persistence call. */
 export async function syncModelsFromAA(deps: SyncDependencies = {}): Promise<AASyncResult> {
   const dataset = await (deps.load ?? (() => fetchCompleteAADataset()))();
+  if (!dataset.models.length) throw new Error("Refusing to synchronize an empty AA dataset");
+  if (!deps.persist) await prepareAAModelSlugs(db, dataset.models);
   const providerCache = new Map<string, number>();
   const persist = deps.persist ?? ((model, currentDataset) => persistAAModel(model, currentDataset, providerCache));
   let created = 0;

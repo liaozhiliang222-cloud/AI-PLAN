@@ -3,6 +3,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { findExistingAAModel, prepareAAModelSlugs } from "./lib/aa-model-identity.mjs";
 
 const db = new PrismaClient({
   adapter: new PrismaPg({
@@ -127,10 +128,7 @@ async function ensureProvider(creatorName, cache) {
 async function persistModel(model, dataset, providerCache) {
   const mapped = mapModel(model);
   const providerId = await ensureProvider(mapped.creatorName, providerCache);
-  const existing = await db.model.findFirst({
-    where: { OR: [{ aaModelId: mapped.aaModelId }, { slug: mapped.slug }] },
-    include: { score: true },
-  });
+  const existing = await findExistingAAModel(db, mapped);
   const score = {
     overall: mapped.overall,
     coding: mapped.coding,
@@ -207,7 +205,10 @@ async function persistModel(model, dataset, providerCache) {
 async function main() {
   console.log("正在完整拉取 Artificial Analysis 内部数据…");
   const dataset = await fetchCompleteDataset();
+  if (!dataset.models.length) throw new Error("Refusing to synchronize an empty AA dataset");
   console.log(`校验通过：${dataset.models.length} 个模型，${dataset.pagesFetched} 页，Index ${dataset.indexVersion ?? "unknown"}`);
+  const identities = await prepareAAModelSlugs(db, dataset.models);
+  console.log(`模型链接校准：重命名 ${identities.renamed}，解决占用 ${identities.displaced}`);
 
   let created = 0;
   let updated = 0;
@@ -216,6 +217,7 @@ async function main() {
     const result = await persistModel(model, dataset, providerCache);
     if (result === "created") created += 1;
     else updated += 1;
+    if ((created + updated) % 100 === 0) console.log(`同步进度：${created + updated}/${dataset.models.length}`);
   }
   console.log(`完成：新建 ${created}，更新 ${updated}；缺失指标均保留为 null`);
 }
