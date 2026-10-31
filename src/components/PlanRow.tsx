@@ -4,8 +4,10 @@ import { fmtPrice, quotaLabel } from "@/lib/format";
 import { LogoBadge } from "./LogoBadge";
 import { RowActions } from "./RowActions";
 
+type PlanRowData = Pick<PlanT, "id" | "name" | "slug" | "provider" | "priceCny" | "priceNote" | "officialUrl" | "quotaAmount" | "quotaUnit" | "quotaWindow" | "fastQuota" | "normalQuota">;
+
 /** 套餐参数目录行；序号仅表示当前事实排序下的位置。 */
-export function PlanRow({ rank, plan }: { rank: number; plan: PlanT }) {
+export function PlanRow({ rank, plan }: { rank: number; plan: PlanRowData }) {
   const quota = quotaLabel(plan);
   return (
     <div className="card card-hover mb-2 p-3 md:p-4 flex items-center gap-3 md:gap-5">
@@ -27,7 +29,7 @@ export function PlanRow({ rank, plan }: { rank: number; plan: PlanT }) {
 }
 
 /** 移动端卡片 */
-export function PlanCardMini({ rank, plan }: { rank: number; plan: PlanT }) {
+export function PlanCardMini({ rank, plan }: { rank: number; plan: PlanRowData }) {
   const quota = quotaLabel(plan);
   return (
     <div className="card card-hover p-3.5">
