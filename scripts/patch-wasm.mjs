@@ -7,13 +7,13 @@
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { patchQueryCompilerWasm } from "./lib/patch-query-compiler.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, "../.open-next/server-functions/default/node_modules/.prisma/client");
 const handlerPath = join(__dirname, "../.open-next/server-functions/default/handler.mjs");
 const workerPath = join(__dirname, "../.open-next/worker.js");
 const wasmSrc = join(__dirname, "../node_modules/.prisma/client/query_compiler_bg.wasm");
-const IMPORT_PATTERN = 'import("./node_modules/.prisma/client/query_compiler_bg.wasm")';
 
 if (!existsSync(handlerPath)) {
   console.log("[patch-wasm] handler.mjs 不存在，跳过（请先运行 opennext build）");
@@ -31,24 +31,12 @@ if (existsSync(wasmSrc)) {
 
 // 2. 替换 getQueryCompilerWasmModule 实现
 let handler = readFileSync(handlerPath, "utf8");
-const idx = handler.indexOf("getQueryCompilerWasmModule:");
-if (idx === -1) { console.warn("[patch-wasm] 未找到 getQueryCompilerWasmModule，跳过"); process.exit(0); }
+const patchedHandler = patchQueryCompilerWasm(handler);
 
-if (handler.includes(IMPORT_PATTERN)) {
+if (patchedHandler === handler) {
   console.log("[patch-wasm] 已是动态 import，跳过替换");
 } else {
-  let depth = 0, end = -1;
-  for (let i = handler.indexOf("{", idx); i < handler.length; i++) {
-    if (handler[i] === "{") depth++;
-    else if (handler[i] === "}") {
-      depth--;
-      if (depth === 0) { end = i; break; }
-    }
-  }
-  if (end === -1) { console.warn("[patch-wasm] 解析失败"); process.exit(1); }
-  const oldCode = handler.slice(idx, end + 1);
-  const newCode = `getQueryCompilerWasmModule:async()=>{const m=await ${IMPORT_PATTERN};return m.default||m}`;
-  handler = handler.replace(oldCode, newCode);
+  handler = patchedHandler;
   writeFileSync(handlerPath, handler, "utf8");
   console.log("[patch-wasm] ✅ 已替换为动态 import");
 }
