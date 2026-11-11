@@ -30,7 +30,7 @@ export interface AAModel {
     cost_per_task?: { total_cost?: number | null } | null;
   } | null;
   pricing?: { price_1m_input_tokens?: number | null; price_1m_output_tokens?: number | null };
-  performance?: { median_output_tokens_per_second?: number | null };
+  performance_v3?: { mean_output_tokens_per_second?: number | null } | null;
 }
 
 interface AAPage {
@@ -100,7 +100,8 @@ export function mapAAModel(model: AAModel): AAMappedModel {
     overall: finiteOrNull(model.evaluations?.artificial_analysis_intelligence_index),
     coding: finiteOrNull(model.evaluations?.artificial_analysis_coding_index),
     agent: finiteOrNull(model.evaluations?.artificial_analysis_agentic_index),
-    speedTokensPerSecond: finiteOrNull(model.performance?.median_output_tokens_per_second),
+    // v3 includes time to first token. Do not mix in the deprecated v2 median.
+    speedTokensPerSecond: finiteOrNull(model.performance_v3?.mean_output_tokens_per_second),
     costPerTaskUsd: finiteOrNull(model.artificial_analysis_intelligence_index_cost?.cost_per_task?.total_cost),
   };
 }

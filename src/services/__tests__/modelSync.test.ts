@@ -23,7 +23,7 @@ const baseModel: AAModel = {
     cost_per_task: { total_cost: 0.94 },
   },
   pricing: { price_1m_input_tokens: 2, price_1m_output_tokens: 6 },
-  performance: { median_output_tokens_per_second: 57.4 },
+  performance_v3: { mean_output_tokens_per_second: 57.4 },
 };
 
 function response(body: unknown, status = 200): Response {
@@ -49,7 +49,7 @@ describe("mapAAModel", () => {
       ...baseModel,
       evaluations: { artificial_analysis_coding_index: 78.3 },
       pricing: undefined,
-      performance: undefined,
+      performance_v3: undefined,
       artificial_analysis_intelligence_index_cost: undefined,
     });
     expect(mapped).toMatchObject({

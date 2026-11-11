@@ -8,6 +8,7 @@ import { AA_ORIGIN, isArtificialAnalysisUrl } from "@/lib/aa-sources";
 import { ctxLabel } from "@/lib/format";
 import { paginateModels } from "@/lib/model-list";
 import { LogoBadge } from "@/components/LogoBadge";
+import { isAAPerformanceV3Ready } from "@/lib/aa-performance";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ const TABS = [
   { key: "intelligence", label: "Intelligence", title: "Intelligence Index", description: "通用推理、知识与综合能力", direction: "desc" },
   { key: "coding", label: "Coding", title: "Coding Index", description: "代码生成、修复与工程任务能力", direction: "desc" },
   { key: "agentic", label: "Agentic", title: "Agentic Index", description: "工具调用、规划与自主任务能力", direction: "desc" },
-  { key: "speed", label: "速度", title: "输出速度", description: "AA 实测中位输出速度，单位 tokens/s", direction: "desc" },
+  { key: "speed", label: "速度", title: "平均端到端输出速度", description: "AA Performance v3：含首 token 等待时间，单位 tokens/s；缺失值不以旧版中位数回填", direction: "desc" },
   { key: "cost", label: "任务成本", title: "Intelligence Index 任务成本", description: "完成 AA Intelligence 评测任务的成本，单位 USD/任务，越低越靠前", direction: "asc" },
 ] as const;
 
@@ -33,10 +34,10 @@ function tabFrom(value: string | undefined): TabKey {
 
 type ModelRow = Awaited<ReturnType<typeof loadModels>>[number];
 
-function scoreFor(model: ModelRow, tab: TabKey): number | null {
+function scoreFor(model: ModelRow, tab: TabKey, speedReady: boolean): number | null {
   if (tab === "coding") return model.score?.coding ?? null;
   if (tab === "agentic") return model.score?.agent ?? null;
-  if (tab === "speed") return model.score?.speed ?? null;
+  if (tab === "speed") return speedReady ? model.score?.speed ?? null : null;
   if (tab === "cost") return model.score?.cost ?? null;
   return model.score?.overall ?? null;
 }
@@ -81,14 +82,19 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
   if (!result.available) return <DatabaseUnavailable />;
 
   const models = result.data;
-  const source = TABS.find((tab) => tab.key === activeTab)!;
+  const speedReady = isAAPerformanceV3Ready();
+  const selectedSource = TABS.find((tab) => tab.key === activeTab)!;
+  const speedPending = activeTab === "speed" && !speedReady;
+  const source = speedPending
+    ? { ...selectedSource, title: "输出速度口径更新中", description: "旧快照尚未完成 v3 核验，暂不展示速度与排名" }
+    : selectedSource;
   const ranked = models
-    .filter((model) => scoreFor(model, activeTab) != null)
+    .filter((model) => scoreFor(model, activeTab, speedReady) != null)
     .sort((a, b) => {
-      const delta = (scoreFor(a, activeTab) ?? 0) - (scoreFor(b, activeTab) ?? 0);
+      const delta = (scoreFor(a, activeTab, speedReady) ?? 0) - (scoreFor(b, activeTab, speedReady) ?? 0);
       return (source.direction === "asc" ? delta : -delta) || a.name.localeCompare(b.name);
     });
-  const unranked = models.filter((model) => scoreFor(model, activeTab) == null);
+  const unranked = models.filter((model) => scoreFor(model, activeTab, speedReady) == null);
   const rows = [
     ...ranked.map((model, index) => ({ model, rank: index + 1 })),
     ...unranked.map((model) => ({ model, rank: null })),
@@ -129,7 +135,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
         <div className="flex items-end justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-gray-900">{source.title}</h2>
-            <p className="mt-1 text-xs text-gray-500">{source.description} · 共 {ranked.length} 个模型有 AA 数据</p>
+            <p className="mt-1 text-xs text-gray-500">{source.description} · {speedPending ? `共 ${models.length} 个模型待核验` : `共 ${ranked.length} 个模型有 AA 数据`}</p>
           </div>
           <span className="text-[11px] text-gray-400 shrink-0">
             {fetchedAt ? `快照 ${new Date(fetchedAt).toLocaleDateString("zh-CN")}` : "等待首次同步"}
@@ -152,7 +158,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {rankedPage.map(({ model, rank }) => {
-                    const value = scoreFor(model, activeTab);
+                    const value = scoreFor(model, activeTab, speedReady);
                     const sourceUrl = isArtificialAnalysisUrl(model.aaSourceUrl) ? model.aaSourceUrl : AA_ORIGIN;
                     return (
                       <tr key={model.id} className="hover:bg-gray-50/60 transition-colors">
@@ -190,8 +196,8 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
           </div>
         ) : ranked.length === 0 ? (
           <div className="card mt-3 p-8 text-center">
-            <p className="text-sm font-medium text-gray-700">暂无该指标的 AA 原始数据</p>
-            <p className="mt-1 text-xs text-gray-400">等待模型同步完成后展示。</p>
+            <p className="text-sm font-medium text-gray-700">{speedPending ? "输出速度口径更新中" : "暂无该指标的 AA 原始数据"}</p>
+            <p className="mt-1 text-xs text-gray-400">{speedPending ? "待完整同步并核验 AA Performance v3 快照后展示。" : "等待模型同步完成后展示。"}</p>
           </div>
         ) : null}
       </section>
@@ -199,8 +205,8 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
       {unrankedPage.length > 0 && (
         <section>
           <div>
-            <h2 className="text-base font-semibold text-gray-900">未评测 / 暂无 {source.label} 数据</h2>
-            <p className="mt-1 text-xs text-gray-500">以下模型已进入本站模型库，但当前 AA 快照没有 {source.title} 原始值。</p>
+            <h2 className="text-base font-semibold text-gray-900">{speedPending ? "速度快照待核验" : <>未评测 / 暂无 {source.label} 数据</>}</h2>
+            <p className="mt-1 text-xs text-gray-500">{speedPending ? "以下模型的速度暂不展示，避免旧版中位数与新版平均值混排。" : <>以下模型已进入本站模型库，但当前 AA 快照没有 {source.title} 原始值。</>}</p>
           </div>
           <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {unrankedPage.map(({ model }) => (
@@ -208,7 +214,7 @@ export default async function ModelsPage({ searchParams }: { searchParams: Promi
                 <LogoBadge name={model.provider.name} color={model.provider.logoColor} size={34} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-gray-900 truncate">{model.name}</span>
-                  <span className="block mt-0.5 text-[11px] text-gray-400 truncate">{model.provider.name} · 暂无 {source.label} 分数</span>
+                  <span className="block mt-0.5 text-[11px] text-gray-400 truncate">{model.provider.name} · {speedPending ? "速度快照待核验" : <>暂无 {source.label} 分数</>}</span>
                 </span>
                 <span className="tag bg-gray-50 text-gray-600 border-gray-200 shrink-0">{model._count.plans} 套餐</span>
               </Link>

@@ -3,6 +3,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { pathToFileURL } from "node:url";
 import { findExistingAAModel, prepareAAModelSlugs } from "./lib/aa-model-identity.mjs";
 
 const db = new PrismaClient({
@@ -94,7 +95,7 @@ async function fetchCompleteDataset() {
   throw new Error("AA pagination exceeded the 1000-page safety limit");
 }
 
-function mapModel(model) {
+export function mapModel(model) {
   return {
     aaModelId: model.id,
     name: model.name,
@@ -107,7 +108,8 @@ function mapModel(model) {
     overall: finiteOrNull(model.evaluations?.artificial_analysis_intelligence_index),
     coding: finiteOrNull(model.evaluations?.artificial_analysis_coding_index),
     agent: finiteOrNull(model.evaluations?.artificial_analysis_agentic_index),
-    speed: finiteOrNull(model.performance?.median_output_tokens_per_second),
+    // v3 includes time to first token. Do not mix in the deprecated v2 median.
+    speed: finiteOrNull(model.performance_v3?.mean_output_tokens_per_second),
     cost: finiteOrNull(model.artificial_analysis_intelligence_index_cost?.cost_per_task?.total_cost),
   };
 }
@@ -188,7 +190,7 @@ async function persistModel(model, dataset, providerCache) {
         summary:
           `${mapped.creatorName} ${mapped.name} 进入 Artificial Analysis 榜单；` +
           `智能指数 ${mapped.overall ?? "—"}、编码指数 ${mapped.coding ?? "—"}、` +
-          `输出速度 ${mapped.speed != null ? Math.round(mapped.speed) + " tok/s" : "—"}。`.slice(0, 300),
+          `平均端到端输出速度（AA Performance v3）${mapped.speed != null ? Math.round(mapped.speed) + " tok/s" : "—"}。`.slice(0, 300),
         importance: "normal",
         sourceType: "benchmark",
         sourceUrl: mapped.sourceUrl,
@@ -202,7 +204,7 @@ async function persistModel(model, dataset, providerCache) {
   return "created";
 }
 
-async function main() {
+export async function main() {
   console.log("正在完整拉取 Artificial Analysis 内部数据…");
   const dataset = await fetchCompleteDataset();
   if (!dataset.models.length) throw new Error("Refusing to synchronize an empty AA dataset");
@@ -222,6 +224,9 @@ async function main() {
   console.log(`完成：新建 ${created}，更新 ${updated}；缺失指标均保留为 null`);
 }
 
-main()
-  .catch((error) => { console.error(error); process.exitCode = 1; })
-  .finally(() => db.$disconnect());
+// Importing the mapper in tests must not fetch data or write to a database.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((error) => { console.error(error); process.exitCode = 1; })
+    .finally(() => db.$disconnect());
+}

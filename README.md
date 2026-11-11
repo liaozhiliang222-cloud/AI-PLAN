@@ -71,6 +71,16 @@ npm run upload       # 仅上传产物
 
 ## 数据说明
 
+### AA Performance v3 速度口径
+
+- 运行时同步和 GitHub Actions 同步均读取 `performance_v3.mean_output_tokens_per_second`，保留 AA 原始数值。API 地址仍为 `/api/v2/language/models/free`，不是 `/api/v3`。
+- 页面展示的是平均端到端输出速度（tokens/s），包含首 token 等待时间，与旧版中位输出速度不可直接混排比较。
+- v3 数据缺失、为 null 或非有限数时保存为 null，不回退到 `performance.median_output_tokens_per_second`。旧字段自 2026-12-10 起将全部返回 null。
+- 数据库 `ModelScore.speed` 没有逐行的统计版本标识，旧值不能可靠识别。本修复不做数据库结构迁移，新增默认关闭的 `AA_PERFORMANCE_V3_READY` 展示开关；未设为 `true` 时，模型榜和详情页隐藏速度及速度排名，显示“口径更新中”，其他指标正常展示。
+- 发布准备顺序：保持开关关闭，更新运行时与 GitHub Actions 两条同步入口，使用新版代码完成全部分页拉取与所有模型持久化，再核验所有可能展示的 AA 模型。特别检查本次 API 响应没有包含的历史行：它们不会被增量同步自动更新，必须先经审核清空旧速度或排除展示，不能仅凭同步成功就启用开关。同步按行写入，途中失败会留下新旧混合快照，必须保持开关关闭并排查完成。
+- 只有上述核验完成，才可把部署环境的 `AA_PERFORMANCE_V3_READY` 设为 `true` 并验收速度榜与详情页；回退旧同步器前应先关闭开关。此开关是人工核验后的发布门槛，不是自动证明所有已存值都来自 v3。本次源码修复与本地测试不执行生产同步、修改线上配置或部署。
+- 字段规范与统计方法：[AA API 文档](https://artificialanalysis.ai/data-api/docs/reference)、[Performance v3 方法说明](https://artificialanalysis.ai/methodology/performance-benchmarking)。
+
 当前为 MVP 演示：价格、额度、评分为示例数据（后台可编辑）。前台与页脚均已标注。数据流水线已预留：SourceMonitor 定时抓取 → Content Hash 变化入审核队列 → 规则解析草稿（`src/services/extract.ts`，未来替换为 LLM Extraction）→ 管理员确认入库。
 
 ### Seed 与套餐可见性

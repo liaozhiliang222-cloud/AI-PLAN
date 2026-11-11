@@ -10,6 +10,7 @@ import { LogoBadge } from "@/components/LogoBadge";
 import { RowActions } from "@/components/RowActions";
 import { queryPublicData } from "@/lib/db-safe";
 import { DatabaseUnavailable } from "@/app/_components/DatabaseUnavailable";
+import { isAAPerformanceV3Ready } from "@/lib/aa-performance";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ sl
   const model = toModelT(row);
   const aaUrl = isArtificialAnalysisUrl(row.aaSourceUrl) ? row.aaSourceUrl : AA_ORIGIN;
   const hasAaScore = Boolean(row.aaModelId && row.aaFetchedAt && row.aaSourceUrl && row.score);
+  const speedReady = isAAPerformanceV3Ready();
   const benchmarks = [
     ["Intelligence", row.score?.overall],
     ["Coding", row.score?.coding],
@@ -107,10 +109,11 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ sl
             ))}
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2.5 text-center">
-            <Metric label="输出速度" value={row.score?.speed == null ? "–" : `${Number(row.score.speed.toFixed(1))} tok/s`} />
+            <Metric label={speedReady ? "平均端到端输出速度" : "输出速度"} value={!speedReady ? "待核验" : row.score?.speed == null ? "–" : `${Number(row.score.speed.toFixed(1))} tok/s`} />
             <Metric label="任务成本" value={row.score?.cost == null ? "–" : `$${row.score.cost < 1 ? row.score.cost.toFixed(3) : row.score.cost.toFixed(2)}`} />
             <Metric label="API 定价" value={model.inputPrice == null ? "–" : `$${model.inputPrice}/1M 输入`} />
           </div>
+          <p className="mt-2 text-[11px] text-gray-400">{speedReady ? "速度采用 AA Performance v3，含首 token 等待时间；缺失值不以旧版中位数回填。" : "输出速度口径更新中：旧快照尚未完成 v3 核验，暂不展示速度。"}</p>
         </section>
       )}
 

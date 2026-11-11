@@ -126,7 +126,7 @@ model ModelScore {
   backend     Float? // Legacy editorial field; AA sync never populates it
   debug       Float? // Legacy editorial field; AA sync never populates it
   longContext Float? // Legacy editorial field; AA sync never populates it
-  speed       Float? // Raw AA median output tokens/second
+  speed       Float? // Raw AA Performance v3 mean end-to-end output tokens/second
   cost        Float? // Raw AA Intelligence Index cost per task, USD
   trend       Int   @default(0)
 }
